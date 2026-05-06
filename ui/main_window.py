@@ -1,16 +1,13 @@
-import sys
-import os
 from datetime import datetime
+
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QTextEdit, QLabel, QFileDialog,
-    QGroupBox, QCheckBox, QMessageBox, QComboBox,
-    QSpinBox, QScrollArea, QInputDialog,
-    QTabWidget, QTableWidget, QTableWidgetItem, QHeaderView
+    QGroupBox, QScrollArea
 )
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor
 
+from input.source_manager import SourceManager
+from input.video_thread import VideoThread
 from ui.video_widget import VideoWidget
 
 
@@ -18,8 +15,10 @@ class MainWindow(QMainWindow):
     """
     Главное окно программы
     """
-    def __init__(self):
+    def __init__(self, video_thread: VideoThread, source_manager: SourceManager):
         super().__init__()
+        self.video_thread = video_thread
+        self.source_manager = source_manager
         self.setWindowTitle("Система мониторинга")
         self.setGeometry(100, 100, 1400, 800)
         self.setStyleSheet("""
@@ -101,11 +100,149 @@ class MainWindow(QMainWindow):
         # Правая панель с прокруткой
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setMinimumWidth(300)
-        scroll_area.setMaximumWidth(350)
+        scroll_area.setMinimumWidth(280)
+        scroll_area.setMaximumWidth(320)
 
-        scroll_content = QWidget()
-        right_panel = QVBoxLayout()
-        right_panel.setSpacing(6)
-        right_panel.setContentsMargins(3, 3, 3, 3)
+        panel_content = QWidget()
+        panel_layout = QVBoxLayout()
+        panel_layout.setSpacing(6)
+        panel_layout.setContentsMargins(5, 5, 5, 5)
+
+        control_group = QGroupBox("Управление")
+        control_layout = QHBoxLayout()
+
+        self.start_btn = QPushButton("Старт")
+        self.stop_btn = QPushButton("Стоп")
+        self.stop_btn.setEnabled(False)
+
+        control_layout.addWidget(self.start_btn)
+        control_layout.addWidget(self.stop_btn)
+        control_group.setLayout(control_layout)
+        panel_layout.addWidget(control_group)
+
+        # Группа: Зоны
+        zones_group = QGroupBox("Зоны контроля")
+        zones_layout = QVBoxLayout()
+
+        zones_btn_layout = QHBoxLayout()
+        self.load_zones_btn = QPushButton("Загрузить")
+        self.save_zones_btn = QPushButton("Сохранить")
+        self.clear_zones_btn = QPushButton("Очистить")
+
+        zones_btn_layout.addWidget(self.load_zones_btn)
+        zones_btn_layout.addWidget(self.save_zones_btn)
+        zones_btn_layout.addWidget(self.clear_zones_btn)
+
+        self.zones_count_label = QLabel("Зон: 0")
+
+        zones_layout.addLayout(zones_btn_layout)
+        zones_layout.addWidget(self.zones_count_label)
+        zones_group.setLayout(zones_layout)
+        panel_layout.addWidget(zones_group)
+
+        # Группа: Журнал
+        log_group = QGroupBox("Журнал событий")
+        log_layout = QVBoxLayout()
+
+        self.log_widget = QTextEdit()
+        self.log_widget.setReadOnly(True)
+        self.log_widget.setMaximumHeight(250)
+
+        self.clear_log_btn = QPushButton("Очистить")
+        log_layout.addWidget(self.log_widget)
+        log_layout.addWidget(self.clear_log_btn)
+        log_group.setLayout(log_layout)
+        panel_layout.addWidget(log_group)
+
+        panel_layout.addStretch()
+        panel_content.setLayout(panel_layout)
+        scroll_area.setWidget(panel_content)
+        top_layout.addWidget(scroll_area)
+
+    def _connect_signals(self):
+        """Подключение сигналов"""
+        # Кнопки
+        self.start_btn.clicked.connect(self._start_camera)
+        self.stop_btn.clicked.connect(self._stop_camera)
+        self.load_zones_btn.clicked.connect(self._load_zones)
+        self.save_zones_btn.clicked.connect(self._save_zones)
+        self.clear_zones_btn.clicked.connect(self._clear_zones)
+        self.clear_log_btn.clicked.connect(self._clear_log)
+
+        # Сигналы от VideoThread
+        self.video_thread.frame_ready.connect(self._on_frame_ready)
+        self.video_thread.log_signal.connect(self._add_log)
+
+        # Сигналы от VideoWidget
+        self.video_widget.zone_added.connect(self._on_zones_updated)
+
+    def _start_camera(self):
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self._add_log("Запуск камеры")
+
+    def _stop_camera(self):
+        self.start_btn.setEnabled(True)
+        self.stop_btn.setEnabled(False)
+        self._add_log("Остановка камеры")
+
+    def _load_zones(self):
+        """
+        Загрузка зон из файла
+        """
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Выберите файл зон", "", "JSON Files (*.json)"
+        )
+        if filepath:
+            # todo: загрузка зон из файла будет позже
+            self._add_log(f"Загружены зоны из {filepath}")
+
+    def _save_zones(self):
+        """
+        Сохранение зон в файл
+        """
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить зоны", "zones.json", "JSON Files (*.json)"
+        )
+        if filepath:
+            # todo: сохранение зон добавить позже
+            self._add_log(f"Зоны сохранены в {filepath}")
+
+    def _clear_zones(self):
+        self.video_widget.zones.clear()
+        self.video_widget.zone_names.clear()
+        self.video_widget.update()
+        self._update_zones_count()
+        self._add_log("Зоны очищены")
+
+    def _clear_log(self):
+        self.log_widget.clear()
+
+    def _on_frame_ready(self, frame, active_zones, moving_objects):
+        """
+        Приём кадра из видеопотока
+        """
+        self.video_widget.set_frame(frame, active_zones, moving_objects)
+        self._update_zones_count()
+
+    def _on_zones_updated(self, zones):
+        active_id = self.source_manager.active_source_id
+        if active_id:
+            self.video_thread.update_zones(zones, active_id)
+        self._update_zones_count()
+
+    def _update_zones_count(self):
+        count = len(self.video_widget.zones)
+        self.zones_count_label.setText(f"Зон: {count}")
+
+    def _add_log(self, text):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.log_widget.append(f"[{timestamp}] {text}")
+        # Автопрокрутка вниз
+        scrollbar = self.log_widget.verticalScrollBar()
+        if scrollbar:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def closeEvent(self, event):
+        self.video_thread.stop()
+        event.accept()

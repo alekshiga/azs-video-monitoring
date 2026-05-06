@@ -1,0 +1,11 @@
+{
+  "sources": [
+    {
+      "id": 1,
+      "name": "USB камера 0",
+      "path": 0,
+      "enabled": true,
+      "type": "usb"
+    }
+  ]
+}

@@ -1,13 +1,13 @@
 import cv2
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
-from PyQt6.QtCore import Qt, QRect, pyqtSignal, QRectF
+from PyQt6.QtCore import Qt, QRect, pyqtSignal
 
 
 class VideoWidget(QLabel):
     zone_added = pyqtSignal(list)
 
-    def __init__(self, parent=None):
+    def __init__(self):
         super().__init__()
         # Текущий кадр, зоны, имена зон, обнаруженные объекты
         self.current_pixmap = None
@@ -24,7 +24,7 @@ class VideoWidget(QLabel):
         self.frame_width = 0
         self.frame_height = 0
 
-        self.minimumSize(640, 480)
+        self.setMinimumSize(640, 480)
         self.setStyleSheet("background-color: #1a1a2e; border:1px solid #16213e;")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
@@ -84,7 +84,7 @@ class VideoWidget(QLabel):
 
         painter.end()
 
-    def mouseMoveEvent(self, event):
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.drawing = True
             self.start_point = event.pos()
@@ -110,12 +110,12 @@ class VideoWidget(QLabel):
             self.zone_added.emit(self.zones)
             self.update()
 
-        def set_zones(self, zones, zone_names=None):
-            """Установить зоны извне"""
-            self.zones = zones.copy()
-            if zone_names:
-                self.zone_names = zone_names.copy()
-            else:
-                self.zone_names = [f"Зона {i}" for i in range(len(zones))]
+    def set_zones(self, zones, zone_names=None):
+        """Установить зоны извне"""
+        self.zones = zones.copy()
+        if zone_names:
+            self.zone_names = zone_names.copy()
+        else:
+            self.zone_names = [f"Зона {i}" for i in range(len(zones))]
             self.update()
 

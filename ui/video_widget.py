@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
 from PyQt6.QtCore import Qt, QRect, pyqtSignal
@@ -24,24 +25,26 @@ class VideoWidget(QLabel):
         self.frame_width = 0
         self.frame_height = 0
 
+        self.draw_rectangles = True
+
         self.setMinimumSize(640, 480)
         self.setStyleSheet("background-color: #1a1a2e; border:1px solid #16213e;")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-    def set_frame(self, frame, active_zones = None, moving_objects = None):
+    def set_frame(self, frame, active_zones=None, moving_objects=None):
         self.active_zones = active_zones or []
         self.moving_objects = moving_objects or []
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        rgb = np.asarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
         h, w, ch = rgb.shape
 
-        self.frame_width = w
-        self.frame_height = h
+        self.frame_width = int(w)
+        self.frame_height = int(h)
 
-        bytes_per_line = ch * w
+        bytes_per_line = int(ch * w)
         image = QImage(
-            rgb.data, w, h, bytes_per_line,
-            QImage.Format.Format_RGB888
+            rgb.tobytes(), self.frame_width, self.frame_height,
+            bytes_per_line, QImage.Format.Format_RGB888
         ).copy()
 
         self.current_pixmap = QPixmap.fromImage(image)
@@ -54,6 +57,10 @@ class VideoWidget(QLabel):
             painter.drawPixmap(self.rect(), self.current_pixmap)
 
         # Отрисовываем зоны (если есть)
+        if not self.draw_rectangles:
+            painter.end()
+            return
+
         for i, zone in enumerate(self.zones):
             rect = QRect(*zone)
 

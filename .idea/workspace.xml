@@ -2,11 +2,12 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/core/detection.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/core/zone_manager.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/output/telegram_notifier.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/input/source_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/source_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/input/video_source.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_source.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/input/video_thread.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_thread.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/main_window.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/video_widget.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/video_widget.py" afterDir="false" />
     </list>
@@ -69,7 +70,7 @@
       <updated>1778067753895</updated>
       <workItem from="1778067757922" duration="4263000" />
       <workItem from="1778072364361" duration="12868000" />
-      <workItem from="1778129281245" duration="2564000" />
+      <workItem from="1778129281245" duration="7162000" />
     </task>
     <servers />
   </component>

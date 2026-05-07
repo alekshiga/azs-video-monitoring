@@ -3,7 +3,7 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QTextEdit, QLabel, QFileDialog,
-    QGroupBox, QScrollArea
+    QGroupBox, QScrollArea, QCheckBox
 )
 
 from input.source_manager import SourceManager
@@ -143,6 +143,10 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(self.start_btn)
         control_layout.addWidget(self.stop_btn)
         control_group.setLayout(control_layout)
+
+        self.draw_rectangles_checkbox = QCheckBox("Отрисовка рамок")
+        self.draw_rectangles_checkbox.setChecked(True)
+        panel_layout.addWidget(self.draw_rectangles_checkbox)
         panel_layout.addWidget(control_group)
 
         # Группа: Зоны
@@ -189,12 +193,18 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         """Подключение сигналов"""
         # Кнопки
-        self.start_btn.clicked.connect(self._start_camera)
-        self.stop_btn.clicked.connect(self._stop_camera)
-        self.load_zones_btn.clicked.connect(self._load_zones)
-        self.save_zones_btn.clicked.connect(self._save_zones)
-        self.clear_zones_btn.clicked.connect(self._clear_zones)
-        self.clear_log_btn.clicked.connect(self._clear_log)
+        buttons = [
+            (self.start_btn, self._start_camera),
+            (self.stop_btn, self._stop_camera),
+            (self.load_zones_btn, self._load_zones),
+            (self.save_zones_btn, self._save_zones),
+            (self.clear_zones_btn, self._clear_zones),
+            (self.clear_log_btn, self._clear_log),
+        ]
+        for btn, handler in buttons:
+            btn.clicked.connect(handler)
+
+        self.draw_rectangles_checkbox.stateChanged.connect(self._toggle_draw_rectangles)
 
         # Сигналы от VideoThread
         self.video_thread.frame_ready.connect(self._on_frame_ready)
@@ -245,12 +255,11 @@ class MainWindow(QMainWindow):
     def _clear_log(self):
         self.log_widget.clear()
 
-    def _on_frame_ready(self, frame, active_zones, moving_objects, source_id):
+    def _on_frame_ready(self, frame, active_zones, moving_objects):
         """
         Приём кадра из видеопотока
         """
         self.video_widget.set_frame(frame, active_zones, moving_objects)
-        self._update_zones_count()
 
     def _on_zones_updated(self, zones):
         active_id = self.source_manager.active_source_id
@@ -269,6 +278,12 @@ class MainWindow(QMainWindow):
         scrollbar = self.log_widget.verticalScrollBar()
         if scrollbar:
             scrollbar.setValue(scrollbar.maximum())
+
+    def _toggle_draw_rectangles(self, state):
+        draw = state == 2  # Qt.Checked
+        self.video_thread.draw_rectangles = draw
+        self.video_widget.draw_rectangles = draw
+        self._add_log(f"Отрисовка рамок: {'включена' if draw else 'выключена'}")
 
     def closeEvent(self, event):
         self.video_thread.stop()

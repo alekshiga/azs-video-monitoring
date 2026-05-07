@@ -1,14 +1,13 @@
 import json
 import os
-from typing import Any
 
 from input.video_source import VideoSource
 
 class SourceManager:
     def __init__(self, config_file: str = "config/sources.json"):
         self.config_file = config_file
-        self.sources = {}  # id -> VideoSource
-        self.active_source_id = None
+        self.sources: dict[int, VideoSource] = {}  # id -> VideoSource
+        self.active_source_id: int | None = None
         self.load_config()
 
     def load_config(self):
@@ -74,7 +73,7 @@ class SourceManager:
             else:
                 print(f"Ошибка подключения {source_id}: {source.name}")
 
-    def get_source(self, source_id: int) -> Any | None:
+    def get_source(self, source_id: int) -> VideoSource | None:
         """
         Получить по id
         :param source_id: идентификатор
@@ -82,11 +81,11 @@ class SourceManager:
         """
         return self.sources.get(source_id)
 
-    def get_active_source(self) -> Any | None:
+    def get_active_source(self) -> VideoSource | None:
         """
         :return: источник или None
         """
-        if self.active_source_id:
+        if self.active_source_id is not None:
             return self.sources.get(self.active_source_id)
         return None
 

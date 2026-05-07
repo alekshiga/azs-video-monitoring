@@ -1,9 +1,7 @@
-import cv2
 import time
-import numpy as np
+
+import cv2
 import torch
-import sys
-import os
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from input.source_manager import SourceManager
@@ -40,6 +38,7 @@ class VideoThread(QThread):
         self.model_name = "yolov8m.pt"
         self.confidence = 0.45
         self.watched_classes = {0, 1, 2, 3, 5, 7, 67}
+        self.draw_rectangles = True
 
         # Определяем устройство
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -60,7 +59,7 @@ class VideoThread(QThread):
 
         print(f"VideoThread: Источник {source_id} инициализирован")
 
-    def update_zones(self, zones, source_id: int):
+    def update_zones(self, zones: list[tuple[int, int, int, int]], source_id: int):
         """
         Обновление зон
         :param zones: список зон [(x, y, w, h), ...]
@@ -107,11 +106,11 @@ class VideoThread(QThread):
             moving_objects = []
 
             # Отрисовка зон на кадре (опционально)
-            # todo сделать чекбокс отрисовки зон
-            for i, (zx, zy, zw, zh) in enumerate(self.zones.get(source_id, [])):
-                cv2.rectangle(processed_frame, (zx, zy), (zx + zw, zy + zh), (0, 255, 0), 2)
-                cv2.putText(processed_frame, f"Zone {i}", (zx + 5, zy + 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
+            if self.draw_rectangles:
+                for i, (zx, zy, zw, zh) in enumerate(self.zones.get(source_id, [])):
+                    cv2.rectangle(processed_frame, (zx, zy), (zx + zw, zy + zh), (0, 255, 0), 2)
+                    cv2.putText(processed_frame, f"Zone {i}", (zx + 5, zy + 20),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
             # Отправка кадра в главное окно
             self.frame_ready.emit(processed_frame.copy(), active_zones, moving_objects, source_id)

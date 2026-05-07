@@ -10,7 +10,7 @@ from ui.main_window import MainWindow
 def main():
     app = QApplication(sys.argv)
 
-    font = QFont("Segue UI", 10)
+    font = QFont("Segoe UI", 10)
     app.setFont(font)
 
     source_manager = SourceManager()

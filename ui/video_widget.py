@@ -48,7 +48,7 @@ class VideoWidget(QLabel):
         self.update()
 
     def paintEvent(self, event):
-        painter = QPainter()
+        painter = QPainter(self)
 
         if self.current_pixmap:
             painter.drawPixmap(self.rect(), self.current_pixmap)

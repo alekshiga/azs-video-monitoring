@@ -67,16 +67,12 @@ class SourceManager:
         return False
 
     def connect_all(self):
-        print(f"[DEBUG] SourceManager.connect_all() called")
-        print(f"[DEBUG] Sources: {list(self.sources.keys())}")
-
         for source_id, source in self.sources.items():
-            print(f"[DEBUG] Connecting source {source_id}: {source.name}")
+            print(f"Подключение источника {source_id}: {source.name}")
             if source.connect():
-                print(f"[DEBUG]   ✅ Connected, starting capture...")
                 source.start_capture()
             else:
-                print(f"[DEBUG]   ❌ Failed to connect")
+                print(f"Ошибка подключения {source_id}: {source.name}")
 
     def get_source(self, source_id: int) -> Any | None:
         """

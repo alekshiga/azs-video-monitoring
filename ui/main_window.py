@@ -19,6 +19,17 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.video_thread = video_thread
         self.source_manager = source_manager
+
+        self.video_widget = None
+        self.start_btn = None
+        self.stop_btn = None
+        self.load_zones_btn = None
+        self.save_zones_btn = None
+        self.clear_zones_btn = None
+        self.zones_count_label = None
+        self.log_widget = None
+        self.clear_log_btn = None
+
         self.setWindowTitle("Система мониторинга")
         self.setGeometry(100, 100, 1400, 800)
         self.setStyleSheet("""
@@ -80,6 +91,20 @@ class MainWindow(QMainWindow):
                         border: 1px solid #16213e;
                     }
                 """)
+        self._setup_ui()
+        self._connect_signals()
+
+        sources = self.source_manager.get_all_sources()
+        if sources:
+            self.source_manager.set_active_source(sources[0].source_id)
+            self._add_log(f"Активный источник: {sources[0].name}")
+        else:
+            self._add_log("Нет доступных источников видео")
+
+        # Запускаем поток видео
+        self.video_thread.start()
+        self._add_log("Система мониторинга запущена")
+
     def _setup_ui(self):
         """
         Создание пользовательского интерфейса
@@ -159,6 +184,8 @@ class MainWindow(QMainWindow):
         scroll_area.setWidget(panel_content)
         top_layout.addWidget(scroll_area)
 
+        outer_layout.addLayout(top_layout)
+
     def _connect_signals(self):
         """Подключение сигналов"""
         # Кнопки
@@ -218,7 +245,7 @@ class MainWindow(QMainWindow):
     def _clear_log(self):
         self.log_widget.clear()
 
-    def _on_frame_ready(self, frame, active_zones, moving_objects):
+    def _on_frame_ready(self, frame, active_zones, moving_objects, source_id):
         """
         Приём кадра из видеопотока
         """

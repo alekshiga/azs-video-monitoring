@@ -26,7 +26,7 @@ class VideoThread(QThread):
         super().__init__()
 
         self.running = False
-        self.source_manager = None
+        self.source_manager = source_manage
 
         # Настройки для каждой камеры
         self.zones = {}
@@ -132,3 +132,10 @@ class VideoThread(QThread):
                 time.sleep(target_frame_time - frame_time)
 
         self.log_signal.emit("Поток видео остановлен")
+
+    def stop(self):
+        """
+        Остановка потока обработки видео
+        """
+        self.running = False
+        self.wait()

@@ -26,7 +26,7 @@ class VideoSource:
         self._lock = threading.Lock()
         self._running = False
         self._Thread = None
-        self.fps = 30
+        self.fps = 60
         self.frame_buffer = deque(maxlen=2)
 
     def connect(self) -> bool:
@@ -95,7 +95,7 @@ class VideoSource:
             if self.cap and self.cap.isOpened():
                 ret, frame = self.cap.read()
 
-                if ret and frame:
+                if ret and frame is not None:
                     with self._lock:
                         self.frame_buffer.append(frame.copy())
 

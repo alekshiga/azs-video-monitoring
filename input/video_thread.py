@@ -4,6 +4,7 @@ import cv2
 import torch
 from PyQt6.QtCore import QThread, pyqtSignal
 
+from core.detection import MotionDetector
 from input.source_manager import SourceManager
 
 
@@ -29,6 +30,7 @@ class VideoThread(QThread):
         # Настройки для каждой камеры
         self.zones = {}
         self.frame_counters = {}
+        self.detectors = {}
 
         # Для мониторинга
         self.last_log_time = time.time()
@@ -52,6 +54,13 @@ class VideoThread(QThread):
         if source_id in self.zones:
             return
 
+        if source_id not in self.detectors:
+            self.detectors[source_id] = MotionDetector(
+                model_name=self.model_name,
+                confidence=self.confidence,
+                device=self.device,
+            )
+
         print(f"VideoThread: Инициализация источника {source_id}")
 
         self.zones[source_id] = []
@@ -67,6 +76,10 @@ class VideoThread(QThread):
         """
         if source_id in self.zones:
             self.zones[source_id] = zones.copy()
+
+            if source_id in self.detectors:
+                self.detectors[source_id].reset()
+
             self.log_signal.emit(f"[Камера {source_id}] Обновлены зоны")
 
     def run(self):
@@ -78,6 +91,7 @@ class VideoThread(QThread):
         self.source_manager.connect_all()
 
         frame_times = []
+        last_object_log_time = time.time()
 
         while self.running:
             start_time = time.time()
@@ -101,9 +115,17 @@ class VideoThread(QThread):
             self.source_status_signal.emit(source_id, True)
             self.frame_counters[source_id] += 1
 
-            processed_frame = frame
+            moving_objects, annotated_frame = self.detectors[source_id].detect(
+                frame, self.zones[source_id]
+            )
+
+            processed_frame = annotated_frame.copy()
+
             active_zones = set()
-            moving_objects = []
+
+            for obj in moving_objects:
+                if obj.get('in_zone') and obj.get('zone_index') is not None:
+                    active_zones.add(obj['zone_index'])
 
             # Отрисовка зон на кадре (опционально)
             if self.draw_rectangles:

@@ -3,7 +3,7 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QTextEdit, QLabel, QFileDialog,
-    QGroupBox, QScrollArea, QCheckBox
+    QGroupBox, QScrollArea, QCheckBox, QComboBox
 )
 
 from input.source_manager import SourceManager
@@ -21,85 +21,124 @@ class MainWindow(QMainWindow):
         self.source_manager = source_manager
 
         self.video_widget = None
-        self.start_btn = None
-        self.stop_btn = None
         self.load_zones_btn = None
         self.save_zones_btn = None
         self.clear_zones_btn = None
         self.zones_count_label = None
         self.log_widget = None
         self.clear_log_btn = None
+        self.source_combo = None
 
         self.setWindowTitle("Система мониторинга")
         self.setGeometry(100, 100, 1400, 800)
-        self.setStyleSheet("""
-                    QMainWindow { background-color: #1a1a2e; }
-                    QPushButton {
-                        padding: 6px 12px;
-                        font-size: 12px;
-                        border-radius: 4px;
-                        border: none;
-                    }
-                    QPushButton:hover { background-color: #2a2a3e; }
-                    QTextEdit {
-                        background-color: #0f0f23;
-                        color: #e0e0e0;
-                        border: 1px solid #16213e;
-                        border-radius: 4px;
-                        font-family: monospace;
-                        font-size: 11px;
-                    }
-                    QGroupBox {
-                        color: #c0c0e0;
-                        border: 1px solid #16213e;
-                        border-radius: 4px;
-                        margin-top: 8px;
-                        padding-top: 12px;
-                        font-weight: bold;
-                    }
-                    QGroupBox::title {
-                        subcontrol-origin: margin;
-                        left: 10px;
-                        padding: 0 5px;
-                    }
-                    QLabel { color: #c0c0e0; }
-                    QCheckBox { color: #c0c0e0; }
-                    QComboBox {
-                        background-color: #0f0f23;
-                        color: #e0e0e0;
-                        border: 1px solid #16213e;
-                        border-radius: 3px;
-                        padding: 4px;
-                    }
-                    QSpinBox {
-                        background-color: #0f0f23;
-                        color: #e0e0e0;
-                        border: 1px solid #16213e;
-                        border-radius: 3px;
-                        padding: 3px;
-                    }
-                    QTableWidget {
-                        background-color: #0f0f23;
-                        color: #e0e0e0;
-                        border: 1px solid #16213e;
-                        gridline-color: #16213e;
-                    }
-                    QHeaderView::section {
-                        background-color: #0f0f23;
-                        color: #c0c0e0;
-                        padding: 4px;
-                        border: 1px solid #16213e;
-                    }
-                """)
+
+        # noinspection PyShadowingNames,PyUnusedLocal
+        def _apply_stylesheet(self):
+            """Применение стилей к окну (светлая тема)"""
+            self.setStyleSheet("""
+                QMainWindow { background-color: #f0f0f0; }
+
+                QPushButton {
+                    padding: 6px 12px;
+                    font-size: 12px;
+                    border-radius: 4px;
+                    border: 1px solid #cccccc;
+                    background-color: #ffffff;
+                    color: #333333;
+                }
+                QPushButton:hover { 
+                    background-color: #e6e6e6; 
+                    border-color: #aaaaaa;
+                }
+                QPushButton:disabled { 
+                    background-color: #f5f5f5; 
+                    color: #999999;
+                    border-color: #dddddd;
+                }
+
+                QTextEdit {
+                    background-color: #ffffff;
+                    color: #333333;
+                    border: 1px solid #cccccc;
+                    border-radius: 4px;
+                    font-family: monospace;
+                    font-size: 11px;
+                }
+
+                QGroupBox {
+                    color: #333333;
+                    border: 1px solid #cccccc;
+                    border-radius: 4px;
+                    margin-top: 8px;
+                    padding-top: 12px;
+                    font-weight: bold;
+                    background-color: #fafafa;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 5px;
+                    background-color: #f0f0f0;
+                }
+
+                QLabel { 
+                    color: #333333; 
+                }
+
+                QCheckBox { 
+                    color: #333333; 
+                    spacing: 8px;
+                }
+
+                QCheckBox::indicator {
+                    width: 16px;
+                    height: 16px;
+                    background-color: #ffffff;
+                    border: 1px solid #cccccc;
+                    border-radius: 3px;
+                }
+
+                QCheckBox::indicator:checked {
+                    background-color: #4caf50;
+                    border-color: #4caf50;
+                }
+
+                QScrollArea {
+                    border: none;
+                    background-color: transparent;
+                }
+
+                QScrollBar:vertical {
+                    background-color: #f0f0f0;
+                    width: 10px;
+                    border-radius: 5px;
+                }
+                QScrollBar::handle:vertical {
+                    background-color: #c0c0c0;
+                    border-radius: 5px;
+                    min-height: 30px;
+                }
+                QScrollBar::handle:vertical:hover {
+                    background-color: #a0a0a0;
+                }
+
+                QScrollBar:horizontal {
+                    background-color: #f0f0f0;
+                    height: 10px;
+                    border-radius: 5px;
+                }
+                QScrollBar::handle:horizontal {
+                    background-color: #c0c0c0;
+                    border-radius: 5px;
+                    min-width: 30px;
+                }
+                QScrollBar::handle:horizontal:hover {
+                    background-color: #a0a0a0;
+                }
+            """)
         self._setup_ui()
         self._connect_signals()
-
-        sources = self.source_manager.get_all_sources()
-        if sources:
-            self.source_manager.set_active_source(sources[0].source_id)
-            self._add_log(f"Активный источник: {sources[0].name}")
-        else:
-            self._add_log("Нет доступных источников видео")
+        self._refresh_source_list()
 
         # Запускаем поток видео
         self.video_thread.start()
@@ -133,21 +172,22 @@ class MainWindow(QMainWindow):
         panel_layout.setSpacing(6)
         panel_layout.setContentsMargins(5, 5, 5, 5)
 
-        control_group = QGroupBox("Управление")
+        # Группа: Выбор камеры
+        control_group = QGroupBox("Выбор камеры")
         control_layout = QHBoxLayout()
 
-        self.start_btn = QPushButton("Старт")
-        self.stop_btn = QPushButton("Стоп")
-        self.stop_btn.setEnabled(False)
+        self.source_combo = QComboBox()
+        self.refresh_btn = QPushButton("Обновить")
+        control_layout.addWidget(self.source_combo)
+        control_layout.addWidget(self.refresh_btn)
 
-        control_layout.addWidget(self.start_btn)
-        control_layout.addWidget(self.stop_btn)
         control_group.setLayout(control_layout)
+        panel_layout.addWidget(control_group)
 
+        # Чекбокс отрисовки рамок
         self.draw_rectangles_checkbox = QCheckBox("Отрисовка рамок")
         self.draw_rectangles_checkbox.setChecked(True)
         panel_layout.addWidget(self.draw_rectangles_checkbox)
-        panel_layout.addWidget(control_group)
 
         # Группа: Зоны
         zones_group = QGroupBox("Зоны контроля")
@@ -193,35 +233,53 @@ class MainWindow(QMainWindow):
     def _connect_signals(self):
         """Подключение сигналов"""
         # Кнопки
-        buttons = [
-            (self.start_btn, self._start_camera),
-            (self.stop_btn, self._stop_camera),
-            (self.load_zones_btn, self._load_zones),
-            (self.save_zones_btn, self._save_zones),
-            (self.clear_zones_btn, self._clear_zones),
-            (self.clear_log_btn, self._clear_log),
-        ]
-        for btn, handler in buttons:
-            btn.clicked.connect(handler)
+        if self.load_zones_btn:
+            self.load_zones_btn.clicked.connect(self._load_zones)
+        if self.save_zones_btn:
+            self.save_zones_btn.clicked.connect(self._save_zones)
+        if self.clear_zones_btn:
+            self.clear_zones_btn.clicked.connect(self._clear_zones)
+        if self.clear_log_btn:
+            self.clear_log_btn.clicked.connect(self._clear_log)
 
-        self.draw_rectangles_checkbox.stateChanged.connect(self._toggle_draw_rectangles)
+        if self.draw_rectangles_checkbox:
+            self.draw_rectangles_checkbox.stateChanged.connect(self._toggle_draw_rectangles)
 
         # Сигналы от VideoThread
-        self.video_thread.frame_ready.connect(self._on_frame_ready)
-        self.video_thread.log_signal.connect(self._add_log)
+        if self.video_thread:
+            self.video_thread.frame_ready.connect(self._on_frame_ready)
+            self.video_thread.log_signal.connect(self._add_log)
 
         # Сигналы от VideoWidget
-        self.video_widget.zone_added.connect(self._on_zones_updated)
+        if self.video_widget:
+            self.video_widget.zone_added.connect(self._on_zones_updated)
 
-    def _start_camera(self):
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self._add_log("Запуск камеры")
+        # Сигнал при выборе источника + обновление источников
+        if self.source_combo:
+            self.source_combo.currentIndexChanged.connect(self._on_source_changed)
+        if self.refresh_btn:
+            self.refresh_btn.clicked.connect(self._refresh_source_list)
 
-    def _stop_camera(self):
-        self.start_btn.setEnabled(True)
-        self.stop_btn.setEnabled(False)
-        self._add_log("Остановка камеры")
+    def _refresh_source_list(self):
+        self.source_combo.clear()
+        sources = self.source_manager.get_sources_list()
+        for src in sources:
+            status = "Успешно" if src['connected'] else "Ошибка"
+            self.source_combo.addItem(f"{status} {src['name']}", src['id'])
+
+        if sources:
+            self.source_combo.setCurrentIndex(0)
+            self._on_source_changed(0)
+            self._add_log(f"Доступно источников: {len(sources)}")
+        else:
+            self._add_log("Нет доступных источников")
+
+    def _on_source_changed(self, index):
+        """Смена источника"""
+        source_id = self.source_combo.itemData(index)
+        if source_id:
+            self.source_manager.set_active_source(source_id)
+            self._add_log(f"Переключено на камеру {source_id}")
 
     def _load_zones(self):
         """

@@ -63,7 +63,7 @@ class MotionDetector:
     }
 
     def __init__(self, model_name="yolov8m.pt", confidence=0.5, device=None,
-                 draw_rectangles=True):
+                 watched_classes = None, draw_rectangles=True):
         """
         Инициализация детектора движения
         :param model_name: имя файла модели YOLO
@@ -83,6 +83,8 @@ class MotionDetector:
             self.model.to("cuda")
 
         self.draw_rectangles = draw_rectangles
+
+        self.watched_classes = watched_classes or {0, 2, 5, 7}
 
         # Параметры обнаружения
         self.confidence = confidence

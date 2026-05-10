@@ -53,11 +53,9 @@ class SourceManager:
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(default_config, f, ensure_ascii=False, indent=2)
 
-    def connect_source(self, source_id=None):
+    def connect_source(self, source_id):
         """
-        Подключение и запуск всех источников
-        todo либо склеить все видео, либо параллельно обрабатывать
-        todo условно в 1 fps
+        Подключение к источнику
         """
         if source_id in self.sources:
             if self.sources[source_id].connect():
@@ -66,12 +64,11 @@ class SourceManager:
         return False
 
     def connect_all(self):
-        for source_id, source in self.sources.items():
-            print(f"Подключение источника {source_id}: {source.name}")
+        """Подключение и запуск всех источников"""
+        for source in self.sources.values():
             if source.connect():
                 source.start_capture()
-            else:
-                print(f"Ошибка подключения {source_id}: {source.name}")
+        print(f"Запущено источников: {len(self.sources)}")
 
     def get_source(self, source_id: int) -> VideoSource | None:
         """

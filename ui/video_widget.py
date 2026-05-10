@@ -28,7 +28,7 @@ class VideoWidget(QLabel):
         self.draw_rectangles = True
 
         self.setMinimumSize(640, 480)
-        self.setStyleSheet("background-color: #1a1a2e; border:1px solid #16213e;")
+        self.setStyleSheet("background-color: #f0f0f0; border:1px solid #cccccc;")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def set_frame(self, frame, active_zones=None, moving_objects=None):

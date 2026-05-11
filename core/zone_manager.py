@@ -1,12 +1,15 @@
+import json
+import os
+
+
 class ZoneManager:
-    def __init__(self):
+    def __init__(self, camera_id = None):
+        self.camera_id = camera_id
         self.zones = []
         self.zone_names = []
 
     def set_zones(self, zones, zone_names=None):
-        """
-        Задать отслеживаемые зоны
-        """
+        """Задать отслеживаемые зоны"""
         self.zones = zones.copy()
         if zone_names:
             self.zone_names = zone_names.copy()
@@ -51,11 +54,56 @@ class ZoneManager:
         return overlap_ratio >= min_ratio
 
     def get_all_intersections(self, bbox, min_ratio=0.1):
-        """
-        Возвращает список индексов зон, с которыми пересекается объект
-        """
+        """Возвращает список индексов зон, с которыми пересекается объект"""
         result = []
         for i in range(len(self.zones)):
             if self.check_intersection(bbox, i, min_ratio):
                 result.append(i)
         return result
+
+    def save_to_file(self, filepath):
+        """Сохранить зоны в JSON файл"""
+        data = {
+            "camera_id": self.camera_id,
+            "zones": []
+        }
+
+        for i, (x, y, w, h) in enumerate(self.zones):
+            name = self.zone_names[i] if i < len(self.zone_names) else f"Зона {i}"
+            data["zones"].append({
+                "name": name,
+                "x": x, "y": y, "w": w, "h": h
+            })
+
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        return True
+
+    def load_from_file(self, filepath):
+        """Загрузить зоны из файла"""
+        if not os.path.exists(filepath):
+            return False
+
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            self.camera_id = data.get("camera_id")
+            self.zones.clear()
+            self.zone_names.clear()
+
+            for zone_data in data.get("zones", []):
+                x = zone_data.get("x", 0)
+                y = zone_data.get("y", 0)
+                w = zone_data.get("w", 0)
+                h = zone_data.get("h", 0)
+                name = zone_data.get("name", f"Зона {len(self.zones)}")
+
+                self.zones.append((x, y, w, h))
+                self.zone_names.append(name)
+
+            return True
+        except Exception as e:
+            print(f"Ошибка загрузки зон: {e}")
+            return False

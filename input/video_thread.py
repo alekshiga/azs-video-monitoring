@@ -57,9 +57,7 @@ class VideoThread(QThread):
 
 
     def init_source(self, source_id: int):
-        """
-        Инициализация источника для детекции
-        """
+        """Инициализация источника для детекции"""
         if source_id in self.zones:
             return
 
@@ -99,9 +97,7 @@ class VideoThread(QThread):
             self.log_signal.emit(f"[Камера {source_id}] Обновлены зоны")
 
     def run(self):
-        """
-        Основной цикл обработки видео
-        """
+        """Основной цикл обработки видео"""
         self.running = True
         self.log_signal.emit("Поток видео запущен")
         self.source_manager.connect_all()
@@ -194,3 +190,9 @@ class VideoThread(QThread):
         if self.source_manager:
             self.source_manager.stop_all()
         self.wait()
+
+    def get_zone_manager(self, source_id):
+        """У каждой камеры свой список отслеживаемых зон"""
+        if source_id in self.zone_managers:
+            return self.zone_managers[source_id]
+        return None

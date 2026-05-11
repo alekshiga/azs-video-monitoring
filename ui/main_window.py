@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 
 from PyQt6.QtWidgets import (
@@ -7,6 +8,7 @@ from PyQt6.QtWidgets import (
     QInputDialog, QMessageBox
 )
 
+from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
 from input.video_thread import VideoThread
 from ui.video_widget import VideoWidget
@@ -293,9 +295,28 @@ class MainWindow(QMainWindow):
     def _on_source_changed(self, index):
         """Смена источника"""
         source_id = self.source_combo.itemData(index)
-        if source_id:
-            self.source_manager.set_active_source(source_id)
-            self._add_log(f"Переключено на камеру {source_id}")
+        if not source_id:
+            return
+
+        self.source_manager.set_active_source(source_id)
+        self._add_log(f"Переключено на камеру {source_id}")
+
+        # Автоматически подгружаем зоны для этой камеры
+        zone_manager = self.video_thread.get_zone_manager(source_id)
+        if zone_manager:
+            zones_file = self.source_manager.get_zones_file(source_id)
+            if zones_file and zone_manager.load_from_file(zones_file):
+                self.video_widget.set_zones(zone_manager.zones, zone_manager.zone_names)
+                self.video_thread.update_zones(zone_manager.zones, source_id)
+                self._add_log(f"Загружено зон: {len(zone_manager.zones)}")
+            else:
+                self.video_widget.zones.clear()
+                self.video_widget.zone_names.clear()
+                self.video_widget.update()
+                self.video_thread.update_zones([], source_id)
+                self._add_log("Нет сохранённых зон для этой камеры")
+
+        self._update_zones_count()
 
     def _add_network_camera(self):
         """Добавление источника"""
@@ -324,6 +345,10 @@ class MainWindow(QMainWindow):
             return
 
         new_id = self.source_manager.add_ip_source(name, rtsp_url)
+
+        zones_file = f"config/zones_cam_{new_id}.json"
+        zone_manager = ZoneManager(camera_id=new_id)
+        zone_manager.save_to_file(zones_file)
 
         if self.source_manager.connect_source(new_id):
             self._add_log(f"Добавлена камера: {name}")
@@ -355,34 +380,77 @@ class MainWindow(QMainWindow):
         )
 
         if reply == QMessageBox.StandardButton.Yes:
+
+            zones_file = self.source_manager.get_zones_file(source_id)
+            if zones_file and os.path.exists(zones_file):
+                os.remove(zones_file)
+                self._add_log(f"Удалён файл зон камеры")
+
             self.source_manager.remove_source(source_id)
             self._refresh_source_list()
             self._add_log(f"Удалена камера: {camera_name}")
 
             if self.source_combo.count() == 0:
                 self.source_manager.active_source_id = None
+                self.video_widget.zones.clear()
+                self.video_widget.zone_names.clear()
+                self.video_widget.update()
 
     def _load_zones(self):
-        """
-        Загрузка зон из файла
-        """
+        """Загрузка зон из файла для ТЕКУЩЕЙ камеры"""
+        source_id = self.source_combo.currentData()
+        if not source_id:
+            self._add_log("Сначала выберите камеру")
+            return
+
         filepath, _ = QFileDialog.getOpenFileName(
-            self, "Выберите файл зон", "", "JSON Files (*.json)"
+            self, "Выберите файл зон", f"zones_cam_{source_id}.json", "JSON Files (*.json)"
         )
-        if filepath:
-            # todo: загрузка зон из файла будет позже
+        if not filepath:
+            return
+
+        zone_manager = self.video_thread.get_zone_manager(source_id)
+        if not zone_manager:
+            self._add_log("Ошибка: менеджер зон не найден")
+            return
+
+        if zone_manager.load_from_file(filepath):
+            self.video_widget.set_zones(zone_manager.zones, zone_manager.zone_names)
+            self.video_thread.update_zones(zone_manager.zones, source_id)
+            self._update_zones_count()
             self._add_log(f"Загружены зоны из {filepath}")
+        else:
+            self._add_log(f"Ошибка загрузки зон из {filepath}")
 
     def _save_zones(self):
-        """
-        Сохранение зон в файл
-        """
-        filepath, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить зоны", "zones.json", "JSON Files (*.json)"
-        )
-        if filepath:
-            # todo: сохранение зон добавить позже
-            self._add_log(f"Зоны сохранены в {filepath}")
+        """Сохранение зон в файл"""
+        source_id = self.source_combo.currentData()
+        if not source_id:
+            self._add_log("Сначала выберите камеру")
+            return
+
+        zones = self.video_widget.zones
+        zone_names = self.video_widget.zone_names
+
+        if not zones:
+            self._add_log("Нет зон для сохранения")
+            return
+
+        # Получаем ZoneManager для текущей камеры
+        zone_manager = self.video_thread.get_zone_manager(source_id)
+        if not zone_manager:
+            self._add_log("Ошибка: менеджер зон не найден")
+            return
+
+        # Обновляем зоны в менеджере
+        zone_manager.set_zones(zones, zone_names)
+        zone_manager.camera_id = source_id
+
+        zones_file = self.source_manager.get_zones_file(source_id)
+        if zone_manager.save_to_file(zones_file):
+            self._add_log(f"Зоны сохранены (камера {source_id})")
+        else:
+            self._add_log(f"Ошибка сохранения зон")
 
     def _clear_zones(self):
         self.video_widget.zones.clear()
@@ -424,8 +492,17 @@ class MainWindow(QMainWindow):
         self.video_widget.draw_rectangles = draw
         self._add_log(f"Отрисовка рамок: {'включена' if draw else 'выключена'}")
 
-
-
     def closeEvent(self, event):
+        source_id = self.source_combo.currentData()
+        if source_id:
+            zones = self.video_widget.zones
+            if zones:
+                zone_manager = self.video_thread.get_zone_manager(source_id)
+                if zone_manager:
+                    zone_manager.set_zones(zones, self.video_widget.zone_names)
+                    zones_file = self.source_manager.get_zones_file(source_id)
+                    zone_manager.save_to_file(zones_file)
+                    self._add_log("Зоны сохранены")
+
         self.video_thread.stop()
         event.accept()

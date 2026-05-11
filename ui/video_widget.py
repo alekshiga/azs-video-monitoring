@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from PyQt6.QtWidgets import QLabel
+from PyQt6.QtWidgets import QLabel, QInputDialog
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
 from PyQt6.QtCore import Qt, QRect, pyqtSignal, QTimer
 
@@ -146,12 +146,42 @@ class VideoWidget(QLabel):
             if rect.width() < 20 or rect.height() < 20:
                 return
 
+            zone_name, ok = QInputDialog.getText(
+                self,
+                "Добавление зоны",
+                "Введите название зоны",
+                text=f"Зона {len(self.zones)}"
+            )
+
+            if not ok or not zone_name:
+                zone_name = f"Зона {len(self.zones)}"
+
             zone = (rect.x(), rect.y(), rect.width(), rect.height())
             self.zones.append(zone)
-            self.zone_names.append(f"Зона {len(self.zones) - 1}")
-            print(f"Добавлена зона: {zone}")
+            self.zone_names.append(zone_name)
+
+            print(f"Добавлена зона: {zone} -> {zone_name}")
             self.zone_added.emit(self.zones)
             self.update()
+
+    def mouseDoubleClickEvent(self, event):
+        pos = event.pos()
+
+        for i, zone in enumerate(self.zones):
+            rect = QRect(*zone)
+            if rect.contains(pos):
+                new_name, ok = QInputDialog.getText(
+                    self,
+                    "Редактирование зоны",
+                    f"Введите новое название для зоны {i}:",
+                    text=self.zone_names[i]
+                )
+                if ok and new_name:
+                    self.zone_names[i] = new_name
+                    self.zone_added.emit(self.zones)  # обновляем
+                    self.update()
+                    print(f"Зона {i} переименована в: {new_name}")
+                break
 
     def set_zones(self, zones, zone_names=None):
         """Установить зоны извне"""

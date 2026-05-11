@@ -166,3 +166,10 @@ class SourceManager:
 
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def get_zones_file(self, source_id):
+        """Получить путь к файлу зон для камеры"""
+        source = self.sources.get(source_id)
+        if source:
+            return source.zones_file
+        return None

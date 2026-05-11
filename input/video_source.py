@@ -28,6 +28,7 @@ class VideoSource:
         self._Thread = None
         self.fps = 60
         self.frame_buffer = deque(maxlen=2)
+        self.zones_file = f"config/zones_cam_{source_id}.json"
 
     def connect(self) -> bool:
         """

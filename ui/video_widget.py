@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from PyQt6.QtWidgets import QLabel
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
-from PyQt6.QtCore import Qt, QRect, pyqtSignal
+from PyQt6.QtCore import Qt, QRect, pyqtSignal, QTimer
 
 
 class VideoWidget(QLabel):
@@ -27,11 +27,20 @@ class VideoWidget(QLabel):
 
         self.draw_rectangles = True
 
+        self.loading = True  # показываем загрузку, пока нет кадров
+        self.loading_angle = 0  # угол для анимации
+        self.loading_timer = QTimer()
+        self.loading_timer.timeout.connect(self._rotate_loading)
+        self.loading_timer.start(50)
+
         self.setMinimumSize(640, 480)
         self.setStyleSheet("background-color: #f0f0f0; border:1px solid #cccccc;")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def set_frame(self, frame, active_zones=None, moving_objects=None):
+        self.loading = False
+        self.loading_timer.stop()
+
         self.active_zones = active_zones or []
         self.moving_objects = moving_objects or []
 
@@ -53,10 +62,32 @@ class VideoWidget(QLabel):
     def paintEvent(self, event):
         painter = QPainter(self)
 
+        if self.loading:
+            painter.fillRect(self.rect(), QColor(240, 240, 240))
+
+            center = self.rect().center()
+            radius = 30
+
+            spinner_center_y = center.y() - 30
+            pen = QPen(QColor(66, 133, 244), 4)
+            painter.setPen(pen)
+            start_angle = self.loading_angle * 16
+            span_angle = 120 * 16
+            painter.drawArc(center.x() - radius, spinner_center_y - radius,
+                            radius * 2, radius * 2, start_angle, span_angle)
+
+            font = QFont("Arial", 12, QFont.Weight.Normal)
+            painter.setFont(font)
+            painter.setPen(QColor(100, 100, 100))
+            text_rect = QRect(center.x() - 150, spinner_center_y + 40, 300, 30)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "Соединение...")
+
+            painter.end()
+            return
+
         if self.current_pixmap:
             painter.drawPixmap(self.rect(), self.current_pixmap)
 
-        # Отрисовываем зоны (если есть)
         if not self.draw_rectangles:
             painter.end()
             return
@@ -90,6 +121,11 @@ class VideoWidget(QLabel):
             painter.drawRect(rect)
 
         painter.end()
+
+    def _rotate_loading(self):
+        if self.loading:
+            self.loading_angle = (self.loading_angle + 30) % 360
+            self.update()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:

@@ -127,21 +127,6 @@ class SourceManager:
             return source.get_last_frame()
         return None
 
-    def add_usb_source(self, name, index):
-        """
-        Добавить USB-камеру
-        :return: id нового источника
-        """
-        if self.sources:
-            new_id = max(self.sources.keys()) + 1
-        else:
-            new_id = 1
-
-        source = VideoSource(new_id, name, index)
-        self.sources[new_id] = source
-        self._save_config()
-        return new_id
-
     def add_ip_source(self, name, rtsp_url):
         """
         Добавить IP-камеру (RTSP)

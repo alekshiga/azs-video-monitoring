@@ -3,7 +3,8 @@ from datetime import datetime
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QTextEdit, QLabel, QFileDialog,
-    QGroupBox, QScrollArea, QCheckBox, QComboBox
+    QGroupBox, QScrollArea, QCheckBox, QComboBox,
+    QInputDialog, QMessageBox
 )
 
 from input.source_manager import SourceManager
@@ -28,6 +29,9 @@ class MainWindow(QMainWindow):
         self.log_widget = None
         self.clear_log_btn = None
         self.source_combo = None
+        self.add_camera_btn = None
+        self.remove_btn = None
+        self.refresh_btn = None
 
         self.setWindowTitle("Система мониторинга")
         self.setGeometry(100, 100, 1400, 800)
@@ -173,13 +177,22 @@ class MainWindow(QMainWindow):
         panel_layout.setContentsMargins(5, 5, 5, 5)
 
         # Группа: Выбор камеры
-        control_group = QGroupBox("Выбор камеры")
-        control_layout = QHBoxLayout()
+        control_group = QGroupBox("Управление камерами")
+        control_layout = QVBoxLayout()
 
+        select_layout = QHBoxLayout()
         self.source_combo = QComboBox()
         self.refresh_btn = QPushButton("Обновить")
-        control_layout.addWidget(self.source_combo)
-        control_layout.addWidget(self.refresh_btn)
+        select_layout.addWidget(self.source_combo)
+        select_layout.addWidget(self.refresh_btn)
+        control_layout.addLayout(select_layout)
+
+        edit_layout = QHBoxLayout()
+        self.add_camera_btn = QPushButton("Добавить камеру")
+        self.remove_btn = QPushButton("Удалить")
+        edit_layout.addWidget(self.add_camera_btn)
+        edit_layout.addWidget(self.remove_btn)
+        control_layout.addLayout(edit_layout)
 
         control_group.setLayout(control_layout)
         panel_layout.addWidget(control_group)
@@ -241,6 +254,10 @@ class MainWindow(QMainWindow):
             self.clear_zones_btn.clicked.connect(self._clear_zones)
         if self.clear_log_btn:
             self.clear_log_btn.clicked.connect(self._clear_log)
+        if self.add_camera_btn:
+            self.add_camera_btn.clicked.connect(self._add_network_camera)
+        if self.remove_btn:
+            self.remove_btn.clicked.connect(self.remove_current_camera)
 
         if self.draw_rectangles_checkbox:
             self.draw_rectangles_checkbox.stateChanged.connect(self._toggle_draw_rectangles)
@@ -264,8 +281,7 @@ class MainWindow(QMainWindow):
         self.source_combo.clear()
         sources = self.source_manager.get_sources_list()
         for src in sources:
-            status = "Успешно" if src['connected'] else "Ошибка"
-            self.source_combo.addItem(f"{status} {src['name']}", src['id'])
+            self.source_combo.addItem(src['name'], src['id'])
 
         if sources:
             self.source_combo.setCurrentIndex(0)
@@ -280,6 +296,71 @@ class MainWindow(QMainWindow):
         if source_id:
             self.source_manager.set_active_source(source_id)
             self._add_log(f"Переключено на камеру {source_id}")
+
+    def _add_network_camera(self):
+        """Добавление источника"""
+        name, ok = QInputDialog.getText(
+            self,
+            "Добавить камеру",
+            "Введите название камеры: "
+        )
+        if not ok or not name:
+            return
+
+        rtsp_url, ok = QInputDialog.getText(
+            self,
+            "RTSP адрес",
+            "Формат: rtsp://ip:порт/путь\n"
+            "Пример: rtsp://192.168.1.100:554/stream1\n\n"
+            "Если камера с авторизацией:\n"
+            "rtsp://логин:пароль@ip:порт/путь"
+        )
+
+        if not ok or not rtsp_url:
+            return
+
+        if not rtsp_url.startswith("rtsp://"):
+            QMessageBox.warning(self, "Ошибка", "RTSP адрес должен начинаться с rtsp://")
+            return
+
+        new_id = self.source_manager.add_ip_source(name, rtsp_url)
+
+        if self.source_manager.connect_source(new_id):
+            self._add_log(f"Добавлена камера: {name}")
+            self._add_log(f"   RTSP: {rtsp_url[:50]}...")
+        else:
+            self._add_log(f"Камера добавлена, но соединение не установлено: {name}")
+            self._add_log(f"   Проверьте RTSP адрес: {rtsp_url}")
+
+        self._refresh_source_list()
+
+        index = self.source_combo.findData(new_id)
+        if index >= 0:
+            self.source_combo.setCurrentIndex(index)
+
+    def remove_current_camera(self):
+        """Удаление текущей (отслеживаемой) камеры"""
+        source_id = self.source_combo.currentData()
+        if not source_id:
+            self._add_log("Нет выбранной камеры")
+            return
+
+        camera_name = self.source_combo.currentText()
+
+        reply = QMessageBox.question(
+            self,
+            "Подтверждение",
+            f"Удалить камеру '{camera_name}'?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            self.source_manager.remove_source(source_id)
+            self._refresh_source_list()
+            self._add_log(f"Удалена камера: {camera_name}")
+
+            if self.source_combo.count() == 0:
+                self.source_manager.active_source_id = None
 
     def _load_zones(self):
         """
@@ -342,6 +423,8 @@ class MainWindow(QMainWindow):
         self.video_thread.draw_rectangles = draw
         self.video_widget.draw_rectangles = draw
         self._add_log(f"Отрисовка рамок: {'включена' if draw else 'выключена'}")
+
+
 
     def closeEvent(self, event):
         self.video_thread.stop()

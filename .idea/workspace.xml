@@ -3,12 +3,9 @@
   <component name="ChangeListManager">
     <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/zone_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/zone_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/input/source_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/source_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/input/video_source.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_source.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/input/video_thread.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_thread.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/filtering.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/output/telegram_notifier.py" beforeDir="false" afterPath="$PROJECT_DIR$/output/telegram_notifier.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ui/video_widget.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/video_widget.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -107,7 +104,8 @@
       <workItem from="1778208800729" duration="77000" />
       <workItem from="1778209122831" duration="2112000" />
       <workItem from="1778436338308" duration="5328000" />
-      <workItem from="1778472495538" duration="4400000" />
+      <workItem from="1778472495538" duration="4600000" />
+      <workItem from="1778565785858" duration="1148000" />
     </task>
     <servers />
   </component>

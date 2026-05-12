@@ -12,6 +12,7 @@ from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
 from input.video_thread import VideoThread
 from ui.video_widget import VideoWidget
+from output.telegram_notifier import TelegramNotifier
 
 
 class MainWindow(QMainWindow):
@@ -20,8 +21,10 @@ class MainWindow(QMainWindow):
     """
     def __init__(self, video_thread: VideoThread, source_manager: SourceManager):
         super().__init__()
-        self.video_thread = video_thread
-        self.source_manager = source_manager
+        # Управление
+        self.video_thread = video_thread # Видеопоток
+        self.source_manager = source_manager # Источниками
+        self.telegram = TelegramNotifier()  # Telegram
 
         self.video_widget = None
         self.load_zones_btn = None
@@ -491,6 +494,23 @@ class MainWindow(QMainWindow):
         self.video_thread.draw_rectangles = draw
         self.video_widget.draw_rectangles = draw
         self._add_log(f"Отрисовка рамок: {'включена' if draw else 'выключена'}")
+
+    def on_zone_alert(self, zone_index, frame, source_id):
+        """
+        Обработчик тревоги в зоне наблюдения
+        :param zone_index: индекс зоны
+        :param frame: кадр с нарушением
+        :param source_id: идентификатор источника
+        """
+        zone_name = None
+        if zone_index < len(self.video_widget.zone_names):
+            zone_name = self.video_widget.zone_names[zone_index]
+        source = self.source_manager.get_source(source_id)
+        if source and zone_name:
+            zone_name = f"{source.name} - {zone_name}"
+        elif source:
+            zone_name = f"{source.name} - зона {zone_index}"
+        self.telegram.send_alert(zone_index, zone_name, frame)
 
     def closeEvent(self, event):
         source_id = self.source_combo.currentData()

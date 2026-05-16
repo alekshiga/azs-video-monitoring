@@ -2,10 +2,18 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/core/scenario_analyzer.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/ui/image_stitching.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/filtering.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/sources.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/sources.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/detection.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/detection.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/input/source_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/source_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/input/video_source.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_source.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/input/video_thread.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_thread.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/output/telegram_notifier.py" beforeDir="false" afterPath="$PROJECT_DIR$/output/telegram_notifier.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ui/video_widget.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/video_widget.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -22,6 +30,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
+  "lastFilter": {
+    "state": "OPEN",
+    "assignee": "alekshiga"
+  }
+}]]></component>
+  <component name="GithubPullRequestsUISettings"><![CDATA[{
+  "selectedUrlAndAccountId": {
+    "url": "https://github.com/alekshiga/azs-video-monitoring",
+    "accountId": "f7bad9b8-1cfa-450a-98c6-980c226e900a"
+  }
+}]]></component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 6,
   &quot;fromUser&quot;: false
@@ -112,10 +132,15 @@
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="telegram notifications fixed, grid videos work now" />
+    <option name="LAST_COMMIT_MESSAGE" value="telegram notifications fixed, grid videos work now" />
+  </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/azs_video_monitoring$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1778072902907" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/ui" />
-    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1778476909957" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/azs_video_monitoring$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1778938162044" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/ui" />
+    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1778945720924" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/azs_video_monitoring$.coverage" NAME=" Coverage Results" MODIFIED="1778440660273" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/azs_video_monitoring$libraries.coverage" NAME="libraries Coverage Results" MODIFIED="1778073420839" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+    <SUITE FILE_PATH="coverage/azs_video_monitoring$detection.coverage" NAME="detection Coverage Results" MODIFIED="1778939612542" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/core" />
   </component>
 </project>

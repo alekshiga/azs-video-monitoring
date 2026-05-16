@@ -1,13 +1,13 @@
 import json
 import os
-
 from input.video_source import VideoSource
+
 
 class SourceManager:
     def __init__(self, config_file: str = "config/sources.json"):
         self.config_file = config_file
-        self.sources: dict[int, VideoSource] = {}  # id -> VideoSource
-        self.active_source_id: int | None = None
+        self.sources = {}
+        self.active_source_id = None
         self.load_config()
 
     def load_config(self):
@@ -25,7 +25,7 @@ class SourceManager:
                         source_id=src_data.get("id"),
                         name=src_data.get("name"),
                         source_path=src_data.get("path"),
-                        )
+                    )
                     self.sources[src_data.get("id")] = source
 
             print(f"Загружено {len(self.sources)} источников видео")
@@ -34,11 +34,7 @@ class SourceManager:
             print(f"Ошибка загрузки: {e}")
 
     def _create_default_config(self):
-        """
-        Создание конфигурации по умолчанию если нет файла
-        """
         os.makedirs('config', exist_ok=True)
-
         default_config = {
             "sources": [
                 {
@@ -53,35 +49,23 @@ class SourceManager:
         with open(self.config_file, "w", encoding="utf-8") as f:
             json.dump(default_config, f, ensure_ascii=False, indent=2)
 
+    def connect_all(self):
+        for source in self.sources.values():
+            if source.connect():
+                source.start_capture()
+        print(f"Запущено источников: {len(self.sources)}")
+
     def connect_source(self, source_id):
-        """
-        Подключение к источнику
-        """
         if source_id in self.sources:
             if self.sources[source_id].connect():
                 self.sources[source_id].start_capture()
                 return True
         return False
 
-    def connect_all(self):
-        """Подключение и запуск всех источников"""
-        for source in self.sources.values():
-            if source.connect():
-                source.start_capture()
-        print(f"Запущено источников: {len(self.sources)}")
-
-    def get_source(self, source_id: int) -> VideoSource | None:
-        """
-        Получить по id
-        :param source_id: идентификатор
-        :return: источник видео
-        """
+    def get_source(self, source_id):
         return self.sources.get(source_id)
 
-    def get_active_source(self) -> VideoSource | None:
-        """
-        :return: источник или None
-        """
+    def get_active_source(self):
         if self.active_source_id is not None:
             return self.sources.get(self.active_source_id)
         return None
@@ -92,15 +76,9 @@ class SourceManager:
             print(f"Активный источник: {self.sources[source_id].name}")
 
     def get_all_sources(self):
-        """
-        :return: список источников
-        """
         return list(self.sources.values())
 
     def get_sources_list(self):
-        """
-        Получить список источников для UI
-        """
         result = []
         for src in self.sources.values():
             result.append({
@@ -112,39 +90,20 @@ class SourceManager:
         return result
 
     def stop_all(self):
-        """
-        Остановка всех источников
-        """
         for source in self.sources.values():
             source.stop()
 
-    def get_frame(self, source_id):
-        """
-        :return: последний кадр или None
-        """
-        source = self.sources.get(source_id)
-        if source:
-            return source.get_last_frame()
-        return None
-
-    def add_ip_source(self, name, rtsp_url):
-        """
-        Добавить IP-камеру (RTSP)
-        """
+    def add_ip_source(self, name, path):
         if self.sources:
             new_id = max(self.sources.keys()) + 1
         else:
             new_id = 1
-
-        source = VideoSource(new_id, name, rtsp_url)
+        source = VideoSource(new_id, name, path)
         self.sources[new_id] = source
         self._save_config()
         return new_id
 
     def remove_source(self, source_id):
-        """
-        Удалить источник
-        """
         if source_id in self.sources:
             self.sources[source_id].stop()
             del self.sources[source_id]
@@ -153,7 +112,6 @@ class SourceManager:
             self._save_config()
 
     def _save_config(self):
-        """Сохранить конфигурацию"""
         data = {"sources": []}
         for src in self.sources.values():
             data["sources"].append({
@@ -163,12 +121,10 @@ class SourceManager:
                 "enabled": True,
                 "type": "usb" if isinstance(src.source_path, int) else "ip"
             })
-
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def get_zones_file(self, source_id):
-        """Получить путь к файлу зон для камеры"""
         source = self.sources.get(source_id)
         if source:
             return source.zones_file

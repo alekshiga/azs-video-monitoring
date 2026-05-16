@@ -1,0 +1,3561 @@
+Index: ui/main_window.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+>import os\r\nfrom datetime import datetime\r\n\r\nfrom PyQt6.QtWidgets import (\r\n    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,\r\n    QPushButton, QTextEdit, QLabel, QFileDialog,\r\n    QGroupBox, QScrollArea, QCheckBox, QComboBox,\r\n    QInputDialog, QMessageBox\r\n)\r\n\r\nfrom core.zone_manager import ZoneManager\r\nfrom input.source_manager import SourceManager\r\nfrom input.video_thread import VideoThread\r\nfrom ui.image_stitching import ImageStitcher\r\nfrom output.telegram_notifier import TelegramNotifier\r\n\r\n\r\nclass MainWindow(QMainWindow):\r\n    \"\"\"\r\n    Главное окно программы\r\n    \"\"\"\r\n\r\n    def __init__(self, video_thread: VideoThread, source_manager: SourceManager):\r\n        super().__init__()\r\n        # Управление\r\n        self.video_thread = video_thread\r\n        self.source_manager = source_manager\r\n        self.telegram = TelegramNotifier()\r\n\r\n        self.image_stitcher = None\r\n        self.load_zones_btn = None\r\n        self.save_zones_btn = None\r\n        self.clear_zones_btn = None\r\n        self.zones_count_label = None\r\n        self.log_widget = None\r\n        self.clear_log_btn = None\r\n        self.source_combo = None\r\n        self.add_camera_btn = None\r\n        self.remove_btn = None\r\n        self.refresh_btn = None\r\n\r\n        self.setWindowTitle(\"Система мониторинга\")\r\n        self.setGeometry(100, 100, 1400, 800)\r\n\r\n        self._setup_ui()\r\n        self._connect_signals()\r\n        self._refresh_source_list()\r\n\r\n        # Подключаем сигнал тревог и кадров\r\n        self.video_thread.alert_signal.connect(self.on_zone_alert)\r\n        self.video_thread.all_frames_ready.connect(self._on_all_frames_ready)\r\n\r\n        # Запускаем поток видео\r\n        self.video_thread.start()\r\n        self._add_log(\"Система мониторинга запущена\")\r\n\r\n    def _setup_ui(self):\r\n        \"\"\"\r\n        Создание пользовательского интерфейса\r\n        \"\"\"\r\n        central = QWidget()\r\n        self.setCentralWidget(central)\r\n        outer_layout = QVBoxLayout()\r\n        outer_layout.setSpacing(5)\r\n        central.setLayout(outer_layout)\r\n\r\n        top_layout = QHBoxLayout()\r\n        top_layout.setSpacing(8)\r\n\r\n        # Видео (сетка для всех камер)\r\n        self.image_stitcher = ImageStitcher()\r\n        top_layout.addWidget(self.image_stitcher)\r\n\r\n        # Правая панель с прокруткой\r\n        scroll_area = QScrollArea()\r\n        scroll_area.setWidgetResizable(True)\r\n        scroll_area.setMinimumWidth(280)\r\n        scroll_area.setMaximumWidth(320)\r\n\r\n        panel_content = QWidget()\r\n        panel_layout = QVBoxLayout()\r\n        panel_layout.setSpacing(6)\r\n        panel_layout.setContentsMargins(5, 5, 5, 5)\r\n\r\n        # Группа: Выбор камеры\r\n        control_group = QGroupBox(\"Управление камерами\")\r\n        control_layout = QVBoxLayout()\r\n\r\n        select_layout = QHBoxLayout()\r\n        self.source_combo = QComboBox()\r\n        self.refresh_btn = QPushButton(\"Обновить\")\r\n        select_layout.addWidget(self.source_combo)\r\n        select_layout.addWidget(self.refresh_btn)\r\n        control_layout.addLayout(select_layout)\r\n\r\n        edit_layout = QHBoxLayout()\r\n        self.add_camera_btn = QPushButton(\"Добавить камеру\")\r\n        self.remove_btn = QPushButton(\"Удалить\")\r\n        edit_layout.addWidget(self.add_camera_btn)\r\n        edit_layout.addWidget(self.remove_btn)\r\n        control_layout.addLayout(edit_layout)\r\n\r\n        control_group.setLayout(control_layout)\r\n        panel_layout.addWidget(control_group)\r\n\r\n        # Чекбокс отрисовки рамок\r\n        self.draw_rectangles_checkbox = QCheckBox(\"Отрисовка рамок\")\r\n        self.draw_rectangles_checkbox.setChecked(True)\r\n        panel_layout.addWidget(self.draw_rectangles_checkbox)\r\n\r\n        # Группа: Зоны\r\n        zones_group = QGroupBox(\"Зоны контроля\")\r\n        zones_layout = QVBoxLayout()\r\n\r\n        zones_btn_layout = QHBoxLayout()\r\n        self.load_zones_btn = QPushButton(\"Загрузить\")\r\n        self.save_zones_btn = QPushButton(\"Сохранить\")\r\n        self.clear_zones_btn = QPushButton(\"Очистить\")\r\n\r\n        zones_btn_layout.addWidget(self.load_zones_btn)\r\n        zones_btn_layout.addWidget(self.save_zones_btn)\r\n        zones_btn_layout.addWidget(self.clear_zones_btn)\r\n\r\n        self.zones_count_label = QLabel(\"Зон: 0\")\r\n\r\n        zones_layout.addLayout(zones_btn_layout)\r\n        zones_layout.addWidget(self.zones_count_label)\r\n        zones_group.setLayout(zones_layout)\r\n        panel_layout.addWidget(zones_group)\r\n\r\n        # Группа: Журнал\r\n        log_group = QGroupBox(\"Журнал событий\")\r\n        log_layout = QVBoxLayout()\r\n\r\n        self.log_widget = QTextEdit()\r\n        self.log_widget.setReadOnly(True)\r\n        self.log_widget.setMaximumHeight(250)\r\n\r\n        self.clear_log_btn = QPushButton(\"Очистить\")\r\n        log_layout.addWidget(self.log_widget)\r\n        log_layout.addWidget(self.clear_log_btn)\r\n        log_group.setLayout(log_layout)\r\n        panel_layout.addWidget(log_group)\r\n\r\n        panel_layout.addStretch()\r\n        panel_content.setLayout(panel_layout)\r\n        scroll_area.setWidget(panel_content)\r\n        top_layout.addWidget(scroll_area)\r\n\r\n        outer_layout.addLayout(top_layout)\r\n\r\n    def _connect_signals(self):\r\n        \"\"\"Подключение сигналов\"\"\"\r\n        # Кнопки\r\n        if self.load_zones_btn:\r\n            self.load_zones_btn.clicked.connect(self._load_zones)\r\n        if self.save_zones_btn:\r\n            self.save_zones_btn.clicked.connect(self._save_zones)\r\n        if self.clear_zones_btn:\r\n            self.clear_zones_btn.clicked.connect(self._clear_zones)\r\n        if self.clear_log_btn:\r\n            self.clear_log_btn.clicked.connect(self._clear_log)\r\n        if self.add_camera_btn:\r\n            self.add_camera_btn.clicked.connect(self._add_network_camera)\r\n        if self.remove_btn:\r\n            self.remove_btn.clicked.connect(self.remove_current_camera)\r\n\r\n        if self.draw_rectangles_checkbox:\r\n            self.draw_rectangles_checkbox.stateChanged.connect(self._toggle_draw_rectangles)\r\n\r\n        # Сигналы от VideoThread\r\n        if self.video_thread:\r\n            self.video_thread.log_signal.connect(self._add_log)\r\n\r\n        # Сигналы от виджета склейки\r\n        if self.image_stitcher:\r\n            # Подключаем сигнал добавления зон от каждого VideoWidget внутри ImageStitcher\r\n            # Это нужно сделать после обновления списка источников\r\n            pass\r\n\r\n        # Сигнал при выборе источника + обновление источников\r\n        if self.source_combo:\r\n            self.source_combo.currentIndexChanged.connect(self._on_source_changed)\r\n        if self.refresh_btn:\r\n            self.refresh_btn.clicked.connect(self._refresh_source_list)\r\n\r\n    def _refresh_source_list(self):\r\n        self.source_combo.clear()\r\n        sources = self.source_manager.get_sources_list()\r\n        for src in sources:\r\n            self.source_combo.addItem(src['name'], src['id'])\r\n\r\n        if sources:\r\n            self.source_combo.setCurrentIndex(0)\r\n            self._on_source_changed(0)\r\n            self._add_log(f\"Доступно источников: {len(sources)}\")\r\n        else:\r\n            self._add_log(\"Нет доступных источников\")\r\n\r\n    def _on_source_changed(self, index):\r\n        \"\"\"Смена источника (теперь только для информации)\"\"\"\r\n        source_id = self.source_combo.itemData(index)\r\n        if not source_id:\r\n            return\r\n\r\n        self.source_manager.set_active_source(source_id)\r\n        self._add_log(f\"Выбрана камера {source_id} (все камеры показываются в сетке)\")\r\n\r\n    def _add_network_camera(self):\r\n        \"\"\"Добавление источника\"\"\"\r\n        name, ok = QInputDialog.getText(\r\n            self,\r\n            \"Добавить камеру\",\r\n            \"Введите название камеры: \"\r\n        )\r\n        if not ok or not name:\r\n            return\r\n\r\n        rtsp_url, ok = QInputDialog.getText(\r\n            self,\r\n            \"RTSP адрес\",\r\n            \"Формат: rtsp://ip:порт/путь\\n\"\r\n            \"Пример: rtsp://192.168.1.100:554/stream1\\n\\n\"\r\n            \"Если камера с авторизацией:\\n\"\r\n            \"rtsp://логин:пароль@ip:порт/путь\\n\\n\"\r\n            \"Также можно указать путь к видеофайлу (например, videos/test.mp4)\"\r\n        )\r\n\r\n        if not ok or not rtsp_url:\r\n            return\r\n\r\n        # Поддержка как RTSP, так и видеофайлов\r\n        if rtsp_url.startswith(\"rtsp://\") or rtsp_url.endswith(('.mp4', '.avi', '.mov', '.mkv')):\r\n            new_id = self.source_manager.add_ip_source(name, rtsp_url)\r\n        else:\r\n            QMessageBox.warning(self, \"Ошибка\", \"Неподдерживаемый формат источника\")\r\n            return\r\n\r\n        zones_file = f\"config/zones_cam_{new_id}.json\"\r\n        zone_manager = ZoneManager(camera_id=new_id)\r\n        zone_manager.save_to_file(zones_file)\r\n\r\n        if self.source_manager.connect_source(new_id):\r\n            self._add_log(f\"Добавлена камера: {name}\")\r\n            self._add_log(f\"   Адрес: {rtsp_url[:50]}...\")\r\n        else:\r\n            self._add_log(f\"Камера добавлена, но соединение не установлено: {name}\")\r\n            self._add_log(f\"   Проверьте адрес: {rtsp_url}\")\r\n\r\n        self._refresh_source_list()\r\n\r\n    def remove_current_camera(self):\r\n        \"\"\"Удаление текущей (отслеживаемой) камеры\"\"\"\r\n        source_id = self.source_combo.currentData()\r\n        if not source_id:\r\n            self._add_log(\"Нет выбранной камеры\")\r\n            return\r\n\r\n        camera_name = self.source_combo.currentText()\r\n\r\n        reply = QMessageBox.question(\r\n            self,\r\n            \"Подтверждение\",\r\n            f\"Удалить камеру '{camera_name}'?\",\r\n            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No\r\n        )\r\n\r\n        if reply == QMessageBox.StandardButton.Yes:\r\n            zones_file = self.source_manager.get_zones_file(source_id)\r\n            if zones_file and os.path.exists(zones_file):\r\n                os.remove(zones_file)\r\n                self._add_log(f\"Удалён файл зон камеры\")\r\n\r\n            self.source_manager.remove_source(source_id)\r\n            self._refresh_source_list()\r\n            self._add_log(f\"Удалена камера: {camera_name}\")\r\n\r\n            if self.source_combo.count() == 0:\r\n                self.source_manager.active_source_id = None\r\n\r\n    def _on_all_frames_ready(self, all_frames):\r\n        \"\"\"Приём кадров от всех источников\"\"\"\r\n        # Собираем список активных источников\r\n        sources_list = []\r\n        for f in all_frames:\r\n            if f['frame'] is not None:\r\n                sources_list.append({'id': f['id']})\r\n\r\n        # Обновляем сетку если есть источники\r\n        if sources_list:\r\n            self.image_stitcher.set_sources(sources_list)\r\n\r\n        # Обновляем кадры\r\n        for frame_data in all_frames:\r\n            if frame_data['frame'] is not None:\r\n                self.image_stitcher.update_frame(\r\n                    frame_data['id'],\r\n                    frame_data['frame'],\r\n                    frame_data['active_zones'],\r\n                    frame_data['objects']\r\n                )\r\n\r\n    def _load_zones(self):\r\n        \"\"\"Загрузка зон из файла для ТЕКУЩЕЙ камеры\"\"\"\r\n        source_id = self.source_combo.currentData()\r\n        if not source_id:\r\n            self._add_log(\"Сначала выберите камеру\")\r\n            return\r\n\r\n        filepath, _ = QFileDialog.getOpenFileName(\r\n            self, \"Выберите файл зон\", f\"zones_cam_{source_id}.json\", \"JSON Files (*.json)\"\r\n        )\r\n        if not filepath:\r\n            return\r\n\r\n        zone_manager = self.video_thread.get_zone_manager(source_id)\r\n        if not zone_manager:\r\n            self._add_log(\"Ошибка: менеджер зон не найден\")\r\n            return\r\n\r\n        if zone_manager.load_from_file(filepath):\r\n            # Найти нужный виджет и обновить его зоны\r\n            if source_id in self.image_stitcher.video_widgets:\r\n                self.image_stitcher.video_widgets[source_id].set_zones(zone_manager.zones, zone_manager.zone_names)\r\n            self.video_thread.update_zones(zone_manager.zones, source_id)\r\n            self._update_zones_count()\r\n            self._add_log(f\"Загружены зоны из {filepath}\")\r\n        else:\r\n            self._add_log(f\"Ошибка загрузки зон из {filepath}\")\r\n\r\n    def _save_zones(self):\r\n        \"\"\"Сохранение зон в файл\"\"\"\r\n        source_id = self.source_combo.currentData()\r\n        if not source_id:\r\n            self._add_log(\"Сначала выберите камеру\")\r\n            return\r\n\r\n        # Получаем зоны из виджета\r\n        if source_id not in self.image_stitcher.video_widgets:\r\n            self._add_log(\"Виджет камеры не найден\")\r\n            return\r\n\r\n        widget = self.image_stitcher.video_widgets[source_id]\r\n        zones = widget.zones\r\n        zone_names = widget.zone_names\r\n\r\n        if not zones:\r\n            self._add_log(\"Нет зон для сохранения\")\r\n            return\r\n\r\n        zone_manager = self.video_thread.get_zone_manager(source_id)\r\n        if not zone_manager:\r\n            self._add_log(\"Ошибка: менеджер зон не найден\")\r\n            return\r\n\r\n        zone_manager.set_zones(zones, zone_names)\r\n        zone_manager.camera_id = source_id\r\n\r\n        zones_file = self.source_manager.get_zones_file(source_id)\r\n        if zone_manager.save_to_file(zones_file):\r\n            self._add_log(f\"Зоны сохранены (камера {source_id})\")\r\n        else:\r\n            self._add_log(f\"Ошибка сохранения зон\")\r\n\r\n    def _clear_zones(self):\r\n        \"\"\"Очистка зон для выбранной камеры\"\"\"\r\n        source_id = self.source_combo.currentData()\r\n        if not source_id:\r\n            self._add_log(\"Сначала выберите камеру\")\r\n            return\r\n\r\n        if source_id in self.image_stitcher.video_widgets:\r\n            self.image_stitcher.video_widgets[source_id].zones.clear()\r\n            self.image_stitcher.video_widgets[source_id].zone_names.clear()\r\n            self.image_stitcher.video_widgets[source_id].update()\r\n\r\n            zone_manager = self.video_thread.get_zone_manager(source_id)\r\n            if zone_manager:\r\n                zone_manager.clear_zones()\r\n\r\n            self.video_thread.update_zones([], source_id)\r\n            self._update_zones_count()\r\n            self._add_log(\"Зоны очищены\")\r\n\r\n    def _clear_log(self):\r\n        self.log_widget.clear()\r\n\r\n    def _update_zones_count(self):\r\n        \"\"\"Обновляем счётчик зон для выбранной камеры\"\"\"\r\n        source_id = self.source_combo.currentData()\r\n        if source_id and source_id in self.image_stitcher.video_widgets:\r\n            count = len(self.image_stitcher.video_widgets[source_id].zones)\r\n            self.zones_count_label.setText(f\"Зон: {count}\")\r\n        else:\r\n            self.zones_count_label.setText(\"Зон: 0\")\r\n\r\n    def _add_log(self, text):\r\n        timestamp = datetime.now().strftime(\"%H:%M:%S\")\r\n        self.log_widget.append(f\"[{timestamp}] {text}\")\r\n        # Автопрокрутка вниз\r\n        scrollbar = self.log_widget.verticalScrollBar()\r\n        if scrollbar:\r\n            scrollbar.setValue(scrollbar.maximum())\r\n\r\n    def _toggle_draw_rectangles(self, state):\r\n        draw = state == 2  # Qt.Checked\r\n        self.video_thread.draw_rectangles = draw\r\n        for widget in self.image_stitcher.video_widgets.values():\r\n            widget.draw_rectangles = draw\r\n        self._add_log(f\"Отрисовка рамок: {'включена' if draw else 'выключена'}\")\r\n\r\n    def on_zone_alert(self, zone_index, frame, source_id):\r\n        \"\"\"\r\n        Обработчик тревоги в зоне наблюдения\r\n        :param zone_index: индекс зоны\r\n        :param frame: кадр с нарушением\r\n        :param source_id: идентификатор источника\r\n        \"\"\"\r\n        zone_name = None\r\n        if source_id in self.image_stitcher.video_widgets:\r\n            widget = self.image_stitcher.video_widgets[source_id]\r\n            if 0 <= zone_index < len(widget.zone_names):\r\n                zone_name = widget.zone_names[zone_index]\r\n\r\n        source = self.source_manager.get_source(source_id)\r\n        if source and zone_name:\r\n            full_name = f\"{source.name} - {zone_name}\"\r\n        elif source:\r\n            full_name = f\"{source.name} - зона {zone_index}\"\r\n        else:\r\n            full_name = f\"Камера {source_id} - зона {zone_index}\"\r\n\r\n        self.telegram.send_alert(zone_index, full_name, frame)\r\n\r\n    def closeEvent(self, event):\r\n        source_id = self.source_combo.currentData()\r\n        if source_id and source_id in self.image_stitcher.video_widgets:\r\n            zones = self.image_stitcher.video_widgets[source_id].zones\r\n            if zones:\r\n                zone_manager = self.video_thread.get_zone_manager(source_id)\r\n                if zone_manager:\r\n                    zone_manager.set_zones(zones, self.image_stitcher.video_widgets[source_id].zone_names)\r\n                    zones_file = self.source_manager.get_zones_file(source_id)\r\n                    zone_manager.save_to_file(zones_file)\r\n                    self._add_log(\"Зоны сохранены\")\r\n\r\n        self.video_thread.stop()\r\n        event.accept()
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/ui/main_window.py b/ui/main_window.py
+--- a/ui/main_window.py	(revision 76e83cd826887711a913f82bab718b97113a32ce)
++++ b/ui/main_window.py	(date 1778936095957)
+@@ -1,6 +1,8 @@
+ import os
++import time
+ from datetime import datetime
+ 
++from PyQt6.QtCore import Qt
+ from PyQt6.QtWidgets import (
+     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
+     QPushButton, QTextEdit, QLabel, QFileDialog,
+@@ -12,6 +14,7 @@
+ from input.source_manager import SourceManager
+ from input.video_thread import VideoThread
+ from ui.image_stitching import ImageStitcher
++from ui.video_widget import VideoWidget
+ from output.telegram_notifier import TelegramNotifier
+ 
+ 
+@@ -28,6 +31,7 @@
+         self.telegram = TelegramNotifier()
+ 
+         self.image_stitcher = None
++        self.single_video_widget = None
+         self.load_zones_btn = None
+         self.save_zones_btn = None
+         self.clear_zones_btn = None
+@@ -38,10 +42,16 @@
+         self.add_camera_btn = None
+         self.remove_btn = None
+         self.refresh_btn = None
++        self.single_mode_btn = None
++        self.multi_mode_btn = None
++
++        self.current_mode = "single"  # "single" или "multi"
++        self.current_source_id = None
+ 
+         self.setWindowTitle("Система мониторинга")
+-        self.setGeometry(100, 100, 1400, 800)
++        self.setGeometry(100, 100, 1600, 800)
+ 
++        self._apply_stylesheet()
+         self._setup_ui()
+         self._connect_signals()
+         self._refresh_source_list()
+@@ -54,10 +64,108 @@
+         self.video_thread.start()
+         self._add_log("Система мониторинга запущена")
+ 
++    def _apply_stylesheet(self):
++        """Применение стилей к окну (светлая тема)"""
++        self.setStyleSheet("""
++            QMainWindow { background-color: #f0f0f0; }
++
++            QPushButton {
++                padding: 4px 8px;
++                font-size: 11px;
++                border-radius: 4px;
++                border: 1px solid #cccccc;
++                background-color: #ffffff;
++                color: #333333;
++                min-width: 60px;
++            }
++            QPushButton:hover { 
++                background-color: #e6e6e6; 
++                border-color: #aaaaaa;
++            }
++            QPushButton:disabled { 
++                background-color: #f5f5f5; 
++                color: #999999;
++                border-color: #dddddd;
++            }
++
++            QTextEdit {
++                background-color: #ffffff;
++                color: #333333;
++                border: 1px solid #cccccc;
++                border-radius: 4px;
++                font-family: monospace;
++                font-size: 11px;
++            }
++
++            QGroupBox {
++                color: #333333;
++                border: 1px solid #cccccc;
++                border-radius: 4px;
++                margin-top: 8px;
++                padding-top: 12px;
++                font-weight: bold;
++                background-color: #fafafa;
++            }
++            QGroupBox::title {
++                subcontrol-origin: margin;
++                left: 10px;
++                padding: 0 5px;
++                background-color: #f0f0f0;
++            }
++
++            QLabel { 
++                color: #333333; 
++            }
++
++            QCheckBox { 
++                color: #333333; 
++                spacing: 8px;
++            }
++
++            QCheckBox::indicator {
++                width: 16px;
++                height: 16px;
++                background-color: #ffffff;
++                border: 1px solid #cccccc;
++                border-radius: 3px;
++            }
++
++            QCheckBox::indicator:checked {
++                background-color: #4caf50;
++                border-color: #4caf50;
++            }
++
++            QScrollArea {
++                border: none;
++                background-color: transparent;
++            }
++
++            QScrollBar:vertical {
++                background-color: #f0f0f0;
++                width: 10px;
++                border-radius: 5px;
++            }
++            QScrollBar::handle:vertical {
++                background-color: #c0c0c0;
++                border-radius: 5px;
++                min-height: 30px;
++            }
++            QScrollBar::handle:vertical:hover {
++                background-color: #a0a0a0;
++            }
++
++            QComboBox {
++                background-color: #ffffff;
++                color: #333333;
++                border: 1px solid #cccccc;
++                border-radius: 3px;
++                padding: 3px;
++                min-width: 120px;
++            }
++        """)
++
+     def _setup_ui(self):
+-        """
+-        Создание пользовательского интерфейса
+-        """
++        """Создание пользовательского интерфейса"""
+         central = QWidget()
+         self.setCentralWidget(central)
+         outer_layout = QVBoxLayout()
+@@ -67,34 +175,63 @@
+         top_layout = QHBoxLayout()
+         top_layout.setSpacing(8)
+ 
+-        # Видео (сетка для всех камер)
++        # Контейнер для видео (будет меняться)
++        self.video_container = QWidget()
++        self.video_container_layout = QHBoxLayout()
++        self.video_container_layout.setContentsMargins(0, 0, 0, 0)
++        self.video_container.setLayout(self.video_container_layout)
++
++        # Виджеты для видео
++        self.single_video_widget = VideoWidget()
+         self.image_stitcher = ImageStitcher()
+-        top_layout.addWidget(self.image_stitcher)
++
++        # По умолчанию показываем одиночный виджет
++        self.video_container_layout.addWidget(self.single_video_widget)
++        self.image_stitcher.hide()
++
++        top_layout.addWidget(self.video_container)
+ 
+         # Правая панель с прокруткой
+         scroll_area = QScrollArea()
+         scroll_area.setWidgetResizable(True)
+-        scroll_area.setMinimumWidth(280)
+-        scroll_area.setMaximumWidth(320)
++        scroll_area.setMinimumWidth(320)
++        scroll_area.setMaximumWidth(360)
+ 
+         panel_content = QWidget()
+         panel_layout = QVBoxLayout()
+         panel_layout.setSpacing(6)
+         panel_layout.setContentsMargins(5, 5, 5, 5)
+ 
++        # Группа: Режим просмотра
++        mode_group = QGroupBox("Режим просмотра")
++        mode_layout = QHBoxLayout()
++
++        self.single_mode_btn = QPushButton("Одна камера")
++        self.multi_mode_btn = QPushButton("Все камеры")
++        self.single_mode_btn.setCheckable(True)
++        self.multi_mode_btn.setCheckable(True)
++        self.single_mode_btn.setChecked(True)
++
++        mode_layout.addWidget(self.single_mode_btn)
++        mode_layout.addWidget(self.multi_mode_btn)
++        mode_group.setLayout(mode_layout)
++        panel_layout.addWidget(mode_group)
++
+         # Группа: Выбор камеры
+-        control_group = QGroupBox("Управление камерами")
++        control_group = QGroupBox("Выбор камеры")
+         control_layout = QVBoxLayout()
+ 
+         select_layout = QHBoxLayout()
+         self.source_combo = QComboBox()
++        self.source_combo.setMinimumWidth(140)
++        self.source_combo.setMaximumWidth(160)
+         self.refresh_btn = QPushButton("Обновить")
+         select_layout.addWidget(self.source_combo)
+         select_layout.addWidget(self.refresh_btn)
+         control_layout.addLayout(select_layout)
+ 
+         edit_layout = QHBoxLayout()
+-        self.add_camera_btn = QPushButton("Добавить камеру")
++        self.add_camera_btn = QPushButton("Добавить")
+         self.remove_btn = QPushButton("Удалить")
+         edit_layout.addWidget(self.add_camera_btn)
+         edit_layout.addWidget(self.remove_btn)
+@@ -151,6 +288,12 @@
+ 
+     def _connect_signals(self):
+         """Подключение сигналов"""
++        # Кнопки режима просмотра
++        if self.single_mode_btn:
++            self.single_mode_btn.clicked.connect(self._set_single_mode)
++        if self.multi_mode_btn:
++            self.multi_mode_btn.clicked.connect(self._set_multi_mode)
++
+         # Кнопки
+         if self.load_zones_btn:
+             self.load_zones_btn.clicked.connect(self._load_zones)
+@@ -172,18 +315,44 @@
+         if self.video_thread:
+             self.video_thread.log_signal.connect(self._add_log)
+ 
+-        # Сигналы от виджета склейки
+-        if self.image_stitcher:
+-            # Подключаем сигнал добавления зон от каждого VideoWidget внутри ImageStitcher
+-            # Это нужно сделать после обновления списка источников
+-            pass
+-
+-        # Сигнал при выборе источника + обновление источников
++        # Сигнал при выборе источника
+         if self.source_combo:
+             self.source_combo.currentIndexChanged.connect(self._on_source_changed)
+         if self.refresh_btn:
+             self.refresh_btn.clicked.connect(self._refresh_source_list)
+ 
++        # Сигнал добавления зоны от одиночного виджета
++        if self.single_video_widget:
++            self.single_video_widget.zone_added.connect(self._on_zones_updated)
++
++    def _set_single_mode(self):
++        """Переключение в режим одной камеры"""
++        self.current_mode = "single"
++        self.single_mode_btn.setChecked(True)
++        self.multi_mode_btn.setChecked(False)
++
++        # Виджет с потоком с одной камеры
++        self.single_video_widget.show()
++        self.image_stitcher.hide()
++
++        # Обновление зон для выбранной камеры
++        if self.current_source_id:
++            self._load_zones_for_source(self.current_source_id)
++
++        self._add_log("Режим: одна камера")
++
++    def _set_multi_mode(self):
++        """Переключение в режим всех камер"""
++        self.current_mode = "multi"
++        self.single_mode_btn.setChecked(False)
++        self.multi_mode_btn.setChecked(True)
++
++        # Сетка
++        self.single_video_widget.hide()
++        self.image_stitcher.show()
++
++        self._add_log("Режим: все камеры")
++
+     def _refresh_source_list(self):
+         self.source_combo.clear()
+         sources = self.source_manager.get_sources_list()
+@@ -198,13 +367,35 @@
+             self._add_log("Нет доступных источников")
+ 
+     def _on_source_changed(self, index):
+-        """Смена источника (теперь только для информации)"""
++        """Смена источника (только для режима одной камеры)"""
+         source_id = self.source_combo.itemData(index)
+         if not source_id:
+             return
+ 
++        self.current_source_id = source_id
+         self.source_manager.set_active_source(source_id)
+-        self._add_log(f"Выбрана камера {source_id} (все камеры показываются в сетке)")
++        self._add_log(f"Выбрана камера {source_id}")
++
++        # Загружаем зоны для выбранной камеры
++        self._load_zones_for_source(source_id)
++
++    def _load_zones_for_source(self, source_id):
++        """Загрузка зон для конкретной камеры"""
++        zone_manager = self.video_thread.get_zone_manager(source_id)
++        if zone_manager:
++            zones_file = self.source_manager.get_zones_file(source_id)
++            if zones_file and zone_manager.load_from_file(zones_file):
++                self.single_video_widget.set_zones(zone_manager.zones, zone_manager.zone_names)
++                self.video_thread.update_zones(zone_manager.zones, source_id)
++                self._add_log(f"Загружено зон: {len(zone_manager.zones)}")
++            else:
++                self.single_video_widget.zones.clear()
++                self.single_video_widget.zone_names.clear()
++                self.single_video_widget.update()
++                self.video_thread.update_zones([], source_id)
++                self._add_log("Нет сохранённых зон для этой камеры")
++
++        self._update_zones_count()
+ 
+     def _add_network_camera(self):
+         """Добавление источника"""
+@@ -216,25 +407,18 @@
+         if not ok or not name:
+             return
+ 
+-        rtsp_url, ok = QInputDialog.getText(
++        path, ok = QInputDialog.getText(
+             self,
+-            "RTSP адрес",
+-            "Формат: rtsp://ip:порт/путь\n"
+-            "Пример: rtsp://192.168.1.100:554/stream1\n\n"
+-            "Если камера с авторизацией:\n"
+-            "rtsp://логин:пароль@ip:порт/путь\n\n"
+-            "Также можно указать путь к видеофайлу (например, videos/test.mp4)"
++            "Путь к источнику",
++            "Введите RTSP адрес или путь к видеофайлу:\n"
++            "Пример: rtsp://192.168.1.100:554/stream1\n"
++            "Или: videos/test.mp4"
+         )
+ 
+-        if not ok or not rtsp_url:
++        if not ok or not path:
+             return
+ 
+-        # Поддержка как RTSP, так и видеофайлов
+-        if rtsp_url.startswith("rtsp://") or rtsp_url.endswith(('.mp4', '.avi', '.mov', '.mkv')):
+-            new_id = self.source_manager.add_ip_source(name, rtsp_url)
+-        else:
+-            QMessageBox.warning(self, "Ошибка", "Неподдерживаемый формат источника")
+-            return
++        new_id = self.source_manager.add_ip_source(name, path)
+ 
+         zones_file = f"config/zones_cam_{new_id}.json"
+         zone_manager = ZoneManager(camera_id=new_id)
+@@ -242,15 +426,15 @@
+ 
+         if self.source_manager.connect_source(new_id):
+             self._add_log(f"Добавлена камера: {name}")
+-            self._add_log(f"   Адрес: {rtsp_url[:50]}...")
++            self._add_log(f"   Адрес: {path[:50]}...")
+         else:
+             self._add_log(f"Камера добавлена, но соединение не установлено: {name}")
+-            self._add_log(f"   Проверьте адрес: {rtsp_url}")
++            self._add_log(f"   Проверьте адрес: {path}")
+ 
+         self._refresh_source_list()
+ 
+     def remove_current_camera(self):
+-        """Удаление текущей (отслеживаемой) камеры"""
++        """Удаление текущей камеры"""
+         source_id = self.source_combo.currentData()
+         if not source_id:
+             self._add_log("Нет выбранной камеры")
+@@ -277,32 +461,48 @@
+ 
+             if self.source_combo.count() == 0:
+                 self.source_manager.active_source_id = None
++                self.single_video_widget.zones.clear()
++                self.single_video_widget.zone_names.clear()
++                self.single_video_widget.update()
+ 
+     def _on_all_frames_ready(self, all_frames):
+         """Приём кадров от всех источников"""
+-        # Собираем список активных источников
+-        sources_list = []
+-        for f in all_frames:
+-            if f['frame'] is not None:
+-                sources_list.append({'id': f['id']})
++        if self.current_mode == "multi":
++            # Собираем список активных источников
++            sources_list = []
++            for f in all_frames:
++                if f['frame'] is not None:
++                    sources_list.append({'id': f['id']})
+ 
+-        # Обновляем сетку если есть источники
+-        if sources_list:
+-            self.image_stitcher.set_sources(sources_list)
++            if sources_list:
++                self.image_stitcher.set_sources(sources_list)
+ 
+-        # Обновляем кадры
+-        for frame_data in all_frames:
+-            if frame_data['frame'] is not None:
+-                self.image_stitcher.update_frame(
+-                    frame_data['id'],
+-                    frame_data['frame'],
+-                    frame_data['active_zones'],
+-                    frame_data['objects']
+-                )
++            for frame_data in all_frames:
++                if frame_data['frame'] is not None:
++                    self.image_stitcher.update_frame(
++                        frame_data['id'],
++                        frame_data['frame'],
++                        frame_data['active_zones'],
++                        frame_data['objects']
++                    )
++        elif self.current_mode == "single" and self.current_source_id:
++            # Показываем только выбранную камеру
++            for frame_data in all_frames:
++                if frame_data['id'] == self.current_source_id and frame_data['frame'] is not None:
++                    self.single_video_widget.set_frame(
++                        frame_data['frame'],
++                        frame_data['active_zones'],
++                        frame_data['objects']
++                    )
++                    break
+ 
+     def _load_zones(self):
+-        """Загрузка зон из файла для ТЕКУЩЕЙ камеры"""
+-        source_id = self.source_combo.currentData()
++        """Загрузка зон из файла для текущей камеры"""
++        if self.current_mode != "single":
++            self._add_log("Переключитесь в режим 'Одна камера' для работы с зонами")
++            return
++
++        source_id = self.current_source_id
+         if not source_id:
+             self._add_log("Сначала выберите камеру")
+             return
+@@ -319,9 +519,7 @@
+             return
+ 
+         if zone_manager.load_from_file(filepath):
+-            # Найти нужный виджет и обновить его зоны
+-            if source_id in self.image_stitcher.video_widgets:
+-                self.image_stitcher.video_widgets[source_id].set_zones(zone_manager.zones, zone_manager.zone_names)
++            self.single_video_widget.set_zones(zone_manager.zones, zone_manager.zone_names)
+             self.video_thread.update_zones(zone_manager.zones, source_id)
+             self._update_zones_count()
+             self._add_log(f"Загружены зоны из {filepath}")
+@@ -330,19 +528,17 @@
+ 
+     def _save_zones(self):
+         """Сохранение зон в файл"""
+-        source_id = self.source_combo.currentData()
++        if self.current_mode != "single":
++            self._add_log("Переключитесь в режим 'Одна камера' для работы с зонами")
++            return
++
++        source_id = self.current_source_id
+         if not source_id:
+             self._add_log("Сначала выберите камеру")
+             return
+ 
+-        # Получаем зоны из виджета
+-        if source_id not in self.image_stitcher.video_widgets:
+-            self._add_log("Виджет камеры не найден")
+-            return
+-
+-        widget = self.image_stitcher.video_widgets[source_id]
+-        zones = widget.zones
+-        zone_names = widget.zone_names
++        zones = self.single_video_widget.zones
++        zone_names = self.single_video_widget.zone_names
+ 
+         if not zones:
+             self._add_log("Нет зон для сохранения")
+@@ -364,40 +560,51 @@
+ 
+     def _clear_zones(self):
+         """Очистка зон для выбранной камеры"""
+-        source_id = self.source_combo.currentData()
++        if self.current_mode != "single":
++            self._add_log("Переключитесь в режим 'Одна камера' для работы с зонами")
++            return
++
++        source_id = self.current_source_id
+         if not source_id:
+             self._add_log("Сначала выберите камеру")
+             return
+ 
+-        if source_id in self.image_stitcher.video_widgets:
+-            self.image_stitcher.video_widgets[source_id].zones.clear()
+-            self.image_stitcher.video_widgets[source_id].zone_names.clear()
+-            self.image_stitcher.video_widgets[source_id].update()
++        self.single_video_widget.zones.clear()
++        self.single_video_widget.zone_names.clear()
++        self.single_video_widget.update()
+ 
+-            zone_manager = self.video_thread.get_zone_manager(source_id)
+-            if zone_manager:
+-                zone_manager.clear_zones()
++        zone_manager = self.video_thread.get_zone_manager(source_id)
++        if zone_manager:
++            zone_manager.clear_zones()
+ 
+-            self.video_thread.update_zones([], source_id)
+-            self._update_zones_count()
+-            self._add_log("Зоны очищены")
++        self.video_thread.update_zones([], source_id)
++        self._update_zones_count()
++        self._add_log("Зоны очищены")
+ 
++    def _on_zones_updated(self, zones):
++        if self.current_mode != "single":
++            return
++
++        source_id = self.current_source_id
++        if source_id:
++            self.video_thread.update_zones(zones, source_id)
++            self._update_zones_count()
++
+     def _clear_log(self):
+         self.log_widget.clear()
+ 
+     def _update_zones_count(self):
+-        """Обновляем счётчик зон для выбранной камеры"""
+-        source_id = self.source_combo.currentData()
+-        if source_id and source_id in self.image_stitcher.video_widgets:
+-            count = len(self.image_stitcher.video_widgets[source_id].zones)
+-            self.zones_count_label.setText(f"Зон: {count}")
+-        else:
+-            self.zones_count_label.setText("Зон: 0")
++        """Обновляем счётчик зон"""
++        count = len(self.single_video_widget.zones)
++        self.zones_count_label.setText(f"Зон: {count}")
+ 
+     def _add_log(self, text):
++        if hasattr(self, '_last_log_time') and time.time() - self._last_log_time < 0.05:
++            return
++        self._last_log_time = time.time()
++
+         timestamp = datetime.now().strftime("%H:%M:%S")
+         self.log_widget.append(f"[{timestamp}] {text}")
+-        # Автопрокрутка вниз
+         scrollbar = self.log_widget.verticalScrollBar()
+         if scrollbar:
+             scrollbar.setValue(scrollbar.maximum())
+@@ -405,22 +612,23 @@
+     def _toggle_draw_rectangles(self, state):
+         draw = state == 2  # Qt.Checked
+         self.video_thread.draw_rectangles = draw
++        self.single_video_widget.draw_rectangles = draw
+         for widget in self.image_stitcher.video_widgets.values():
+             widget.draw_rectangles = draw
+         self._add_log(f"Отрисовка рамок: {'включена' if draw else 'выключена'}")
+ 
+     def on_zone_alert(self, zone_index, frame, source_id):
+-        """
+-        Обработчик тревоги в зоне наблюдения
+-        :param zone_index: индекс зоны
+-        :param frame: кадр с нарушением
+-        :param source_id: идентификатор источника
+-        """
++        """Обработчик тревоги в зоне наблюдения"""
+         zone_name = None
+-        if source_id in self.image_stitcher.video_widgets:
+-            widget = self.image_stitcher.video_widgets[source_id]
+-            if 0 <= zone_index < len(widget.zone_names):
+-                zone_name = widget.zone_names[zone_index]
++        if source_id == self.current_source_id:
++            if 0 <= zone_index < len(self.single_video_widget.zone_names):
++                zone_name = self.single_video_widget.zone_names[zone_index]
++        else:
++            # Для режима всех камер
++            if source_id in self.image_stitcher.video_widgets:
++                widget = self.image_stitcher.video_widgets[source_id]
++                if 0 <= zone_index < len(widget.zone_names):
++                    zone_name = widget.zone_names[zone_index]
+ 
+         source = self.source_manager.get_source(source_id)
+         if source and zone_name:
+@@ -433,13 +641,13 @@
+         self.telegram.send_alert(zone_index, full_name, frame)
+ 
+     def closeEvent(self, event):
+-        source_id = self.source_combo.currentData()
+-        if source_id and source_id in self.image_stitcher.video_widgets:
+-            zones = self.image_stitcher.video_widgets[source_id].zones
++        source_id = self.current_source_id
++        if source_id:
++            zones = self.single_video_widget.zones
+             if zones:
+                 zone_manager = self.video_thread.get_zone_manager(source_id)
+                 if zone_manager:
+-                    zone_manager.set_zones(zones, self.image_stitcher.video_widgets[source_id].zone_names)
++                    zone_manager.set_zones(zones, self.single_video_widget.zone_names)
+                     zones_file = self.source_manager.get_zones_file(source_id)
+                     zone_manager.save_to_file(zones_file)
+                     self._add_log("Зоны сохранены")
+Index: .gitignore
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+># Byte-compiled / optimized / DLL files\r\n__pycache__/\r\n*.py[codz]\r\n*$py.class\r\n\r\n# C extensions\r\n*.so\r\n\r\n# Distribution / packaging\r\n.Python\r\nbuild/\r\ndevelop-eggs/\r\ndist/\r\ndownloads/\r\neggs/\r\n.eggs/\r\nlib/\r\nlib64/\r\nparts/\r\nsdist/\r\nvar/\r\nwheels/\r\nshare/python-wheels/\r\n*.egg-info/\r\n.installed.cfg\r\n*.egg\r\nMANIFEST\r\n\r\n# PyInstaller\r\n#  Usually these files are written by a python script from a template\r\n#  before PyInstaller builds the exe, so as to inject date/other infos into it.\r\n*.manifest\r\n*.spec\r\n\r\n# Installer logs\r\npip-log.txt\r\npip-delete-this-directory.txt\r\n\r\n# Unit test / coverage reports\r\nhtmlcov/\r\n.tox/\r\n.nox/\r\n.coverage\r\n.coverage.*\r\n.cache\r\nnosetests.xml\r\ncoverage.xml\r\n*.cover\r\n*.py.cover\r\n.hypothesis/\r\n.pytest_cache/\r\ncover/\r\n\r\n# Translations\r\n*.mo\r\n*.pot\r\n\r\n# Django stuff:\r\n*.log\r\nlocal_settings.py\r\ndb.sqlite3\r\ndb.sqlite3-journal\r\n\r\n# Flask stuff:\r\ninstance/\r\n.webassets-cache\r\n\r\n# Scrapy stuff:\r\n.scrapy\r\n\r\n# Sphinx documentation\r\ndocs/_build/\r\n\r\n# PyBuilder\r\n.pybuilder/\r\ntarget/\r\n\r\n# Jupyter Notebook\r\n.ipynb_checkpoints\r\n\r\n# IPython\r\nprofile_default/\r\nipython_config.py\r\n\r\n# pyenv\r\n#   For a library or package, you might want to ignore these files since the code is\r\n#   intended to run in multiple environments; otherwise, check them in:\r\n# .python-version\r\n\r\n# pipenv\r\n#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.\r\n#   However, in case of collaboration, if having platform-specific dependencies or dependencies\r\n#   having no cross-platform support, pipenv may install dependencies that don't work, or not\r\n#   install all needed dependencies.\r\n#Pipfile.lock\r\n\r\n# UV\r\n#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.\r\n#   This is especially recommended for binary packages to ensure reproducibility, and is more\r\n#   commonly ignored for libraries.\r\n#uv.lock\r\n\r\n# poetry\r\n#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.\r\n#   This is especially recommended for binary packages to ensure reproducibility, and is more\r\n#   commonly ignored for libraries.\r\n#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control\r\n#poetry.lock\r\n#poetry.toml\r\n\r\n# pdm\r\n#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.\r\n#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.\r\n#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control\r\n#pdm.lock\r\n#pdm.toml\r\n.pdm-python\r\n.pdm-build/\r\n\r\n# pixi\r\n#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.\r\n#pixi.lock\r\n#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one\r\n#   in the .venv directory. It is recommended not to include this directory in version control.\r\n.pixi\r\n\r\n# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm\r\n__pypackages__/\r\n\r\n# Celery stuff\r\ncelerybeat-schedule\r\ncelerybeat.pid\r\n\r\n# SageMath parsed files\r\n*.sage.py\r\n\r\n# Environments\r\n.env\r\n.envrc\r\n.venv\r\nenv/\r\nvenv/\r\nENV/\r\nenv.bak/\r\nvenv.bak/\r\n\r\n# Spyder project settings\r\n.spyderproject\r\n.spyproject\r\n\r\n# Rope project settings\r\n.ropeproject\r\n\r\n# mkdocs documentation\r\n/site\r\n\r\n# mypy\r\n.mypy_cache/\r\n.dmypy.json\r\ndmypy.json\r\n\r\n# Pyre type checker\r\n.pyre/\r\n\r\n# pytype static type analyzer\r\n.pytype/\r\n\r\n# Cython debug symbols\r\ncython_debug/\r\n\r\n# PyCharm\r\n#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can\r\n#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore\r\n#  and can be added to the global gitignore or merged into this file.  For a more nuclear\r\n#  option (not recommended) you can uncomment the following to ignore the entire idea folder.\r\n#.idea/\r\n\r\n# Abstra\r\n# Abstra is an AI-powered process automation framework.\r\n# Ignore directories containing user credentials, local state, and settings.\r\n# Learn more at https://abstra.io/docs\r\n.abstra/\r\n\r\n# Visual Studio Code\r\n#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore \r\n#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore\r\n#  and can be added to the global gitignore or merged into this file. However, if you prefer, \r\n#  you could uncomment the following to ignore the entire vscode folder\r\n# .vscode/\r\n\r\n# Ruff stuff:\r\n.ruff_cache/\r\n\r\n# PyPI configuration file\r\n.pypirc\r\n\r\n# Cursor\r\n#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to\r\n#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data\r\n#  refer to https://docs.cursor.com/context/ignore-files\r\n.cursorignore\r\n.cursorindexingignore\r\n\r\n# Marimo\r\nmarimo/_static/\r\nmarimo/_lsp/\r\n__marimo__/\r\nexchange.db\r\n
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.gitignore b/.gitignore
+--- a/.gitignore	(revision 76e83cd826887711a913f82bab718b97113a32ce)
++++ b/.gitignore	(date 1778935420676)
+@@ -206,3 +206,4 @@
+ marimo/_lsp/
+ __marimo__/
+ exchange.db
++/videos/
+Index: .idea/workspace.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.BaseRevisionTextPatchEP
+<+><?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<project version=\"4\">\r\n  <component name=\"ChangeListManager\">\r\n    <list default=\"true\" id=\"2bc2b39f-3643-4852-a82f-6c9cfd3811ca\" name=\"Changes\" comment=\"\">\r\n      <change afterPath=\"$PROJECT_DIR$/core/scenario_analyzer.py\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/ui/image_stitching.py\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/videos/vid1.mp4\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/videos/vid2.mp4\" afterDir=\"false\" />\r\n      <change afterPath=\"$PROJECT_DIR$/videos/vid3.mp4\" afterDir=\"false\" />\r\n      <change beforePath=\"$PROJECT_DIR$/.idea/workspace.xml\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/.idea/workspace.xml\" afterDir=\"false\" />\r\n      <change beforePath=\"$PROJECT_DIR$/config/sources.json\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/config/sources.json\" afterDir=\"false\" />\r\n      <change beforePath=\"$PROJECT_DIR$/input/video_source.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/input/video_source.py\" afterDir=\"false\" />\r\n      <change beforePath=\"$PROJECT_DIR$/input/video_thread.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/input/video_thread.py\" afterDir=\"false\" />\r\n      <change beforePath=\"$PROJECT_DIR$/ui/main_window.py\" beforeDir=\"false\" afterPath=\"$PROJECT_DIR$/ui/main_window.py\" afterDir=\"false\" />\r\n    </list>\r\n    <option name=\"SHOW_DIALOG\" value=\"false\" />\r\n    <option name=\"HIGHLIGHT_CONFLICTS\" value=\"true\" />\r\n    <option name=\"HIGHLIGHT_NON_ACTIVE_CHANGELIST\" value=\"false\" />\r\n    <option name=\"LAST_RESOLUTION\" value=\"IGNORE\" />\r\n  </component>\r\n  <component name=\"FileTemplateManagerImpl\">\r\n    <option name=\"RECENT_TEMPLATES\">\r\n      <list>\r\n        <option value=\"Python Script\" />\r\n      </list>\r\n    </option>\r\n  </component>\r\n  <component name=\"Git.Settings\">\r\n    <option name=\"RECENT_GIT_ROOT_PATH\" value=\"$PROJECT_DIR$\" />\r\n  </component>\r\n  <component name=\"ProjectColorInfo\">{\r\n  &quot;associatedIndex&quot;: 6,\r\n  &quot;fromUser&quot;: false\r\n}</component>\r\n  <component name=\"ProjectId\" id=\"3DLiSuvvW9KennuEjmAOzAnzieP\" />\r\n  <component name=\"ProjectViewState\">\r\n    <option name=\"hideEmptyMiddlePackages\" value=\"true\" />\r\n    <option name=\"showLibraryContents\" value=\"true\" />\r\n  </component>\r\n  <component name=\"PropertiesComponent\"><![CDATA[{\r\n  \"keyToString\": {\r\n    \"ASKED_SHARE_PROJECT_CONFIGURATION_FILES\": \"true\",\r\n    \"Python tests.Python tests in TTT.py.executor\": \"Run\",\r\n    \"Python tests.Python tests in test_camera.py.executor\": \"Run\",\r\n    \"Python.libraries.executor\": \"Run\",\r\n    \"Python.main.executor\": \"Run\",\r\n    \"Python.main_window.executor\": \"Run\",\r\n    \"RunOnceActivity.ShowReadmeOnStart\": \"true\",\r\n    \"RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252\": \"true\",\r\n    \"RunOnceActivity.git.unshallow\": \"true\",\r\n    \"RunOnceActivity.typescript.service.memoryLimit.init\": \"true\",\r\n    \"SHARE_PROJECT_CONFIGURATION_FILES\": \"true\",\r\n    \"codeWithMe.voiceChat.enabledByDefault\": \"false\",\r\n    \"git-widget-placeholder\": \"master\",\r\n    \"ignore.virus.scanning.warn.message\": \"true\",\r\n    \"last_opened_file_path\": \"C:/Users/Silya/azs-video-monitoring/videos\",\r\n    \"nodejs_package_manager_path\": \"npm\",\r\n    \"vue.rearranger.settings.migration\": \"true\"\r\n  }\r\n}]]></component>\r\n  <component name=\"RecentsManager\">\r\n    <key name=\"CopyFile.RECENT_KEYS\">\r\n      <recent name=\"C:\\Users\\Silya\\azs-video-monitoring\\videos\" />\r\n    </key>\r\n  </component>\r\n  <component name=\"RunManager\">\r\n    <configuration name=\"main\" type=\"PythonConfigurationType\" factoryName=\"Python\" temporary=\"true\" nameIsGenerated=\"true\">\r\n      <module name=\"azs-video-monitoring\" />\r\n      <option name=\"ENV_FILES\" value=\"\" />\r\n      <option name=\"INTERPRETER_OPTIONS\" value=\"\" />\r\n      <option name=\"PARENT_ENVS\" value=\"true\" />\r\n      <envs>\r\n        <env name=\"PYTHONUNBUFFERED\" value=\"1\" />\r\n      </envs>\r\n      <option name=\"SDK_HOME\" value=\"\" />\r\n      <option name=\"WORKING_DIRECTORY\" value=\"$PROJECT_DIR$\" />\r\n      <option name=\"IS_MODULE_SDK\" value=\"true\" />\r\n      <option name=\"ADD_CONTENT_ROOTS\" value=\"true\" />\r\n      <option name=\"ADD_SOURCE_ROOTS\" value=\"true\" />\r\n      <option name=\"DEBUG_JUST_MY_CODE\" value=\"false\" />\r\n      <EXTENSION ID=\"PythonCoverageRunConfigurationExtension\" runner=\"coverage.py\" />\r\n      <option name=\"RUN_TOOL\" value=\"\" />\r\n      <option name=\"SCRIPT_NAME\" value=\"$PROJECT_DIR$/main.py\" />\r\n      <option name=\"PARAMETERS\" value=\"\" />\r\n      <option name=\"SHOW_COMMAND_LINE\" value=\"false\" />\r\n      <option name=\"EMULATE_TERMINAL\" value=\"false\" />\r\n      <option name=\"MODULE_MODE\" value=\"false\" />\r\n      <option name=\"REDIRECT_INPUT\" value=\"false\" />\r\n      <option name=\"INPUT_FILE\" value=\"\" />\r\n      <method v=\"2\" />\r\n    </configuration>\r\n    <recent_temporary>\r\n      <list>\r\n        <item itemvalue=\"Python.main\" />\r\n      </list>\r\n    </recent_temporary>\r\n  </component>\r\n  <component name=\"SharedIndexes\">\r\n    <attachedChunks>\r\n      <set>\r\n        <option value=\"bundled-python-sdk-b63d5a1f7c97-b61e75351b1f-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-261.22158.340\" />\r\n      </set>\r\n    </attachedChunks>\r\n  </component>\r\n  <component name=\"TaskManager\">\r\n    <task active=\"true\" id=\"Default\" summary=\"Default task\">\r\n      <changelist id=\"2bc2b39f-3643-4852-a82f-6c9cfd3811ca\" name=\"Changes\" comment=\"\" />\r\n      <created>1778067753895</created>\r\n      <option name=\"number\" value=\"Default\" />\r\n      <option name=\"presentableId\" value=\"Default\" />\r\n      <updated>1778067753895</updated>\r\n      <workItem from=\"1778067757922\" duration=\"4263000\" />\r\n      <workItem from=\"1778072364361\" duration=\"12868000\" />\r\n      <workItem from=\"1778129281245\" duration=\"7162000\" />\r\n      <workItem from=\"1778208800729\" duration=\"77000\" />\r\n      <workItem from=\"1778209122831\" duration=\"2112000\" />\r\n      <workItem from=\"1778436338308\" duration=\"5328000\" />\r\n      <workItem from=\"1778472495538\" duration=\"4600000\" />\r\n      <workItem from=\"1778565785858\" duration=\"1915000\" />\r\n      <workItem from=\"1778650584574\" duration=\"94000\" />\r\n      <workItem from=\"1778730379969\" duration=\"1287000\" />\r\n      <workItem from=\"1778750730949\" duration=\"1000\" />\r\n      <workItem from=\"1778754333903\" duration=\"1139000\" />\r\n      <workItem from=\"1778837807698\" duration=\"1198000\" />\r\n      <workItem from=\"1778847953103\" duration=\"1639000\" />\r\n      <workItem from=\"1778904421609\" duration=\"1798000\" />\r\n    </task>\r\n    <servers />\r\n  </component>\r\n  <component name=\"TypeScriptGeneratedFilesManager\">\r\n    <option name=\"version\" value=\"3\" />\r\n  </component>\r\n  <component name=\"com.intellij.coverage.CoverageDataManagerImpl\">\r\n    <SUITE FILE_PATH=\"coverage/azs_video_monitoring$main_window.coverage\" NAME=\"main_window Coverage Results\" MODIFIED=\"1778072902907\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$/ui\" />\r\n    <SUITE FILE_PATH=\"coverage/azs_video_monitoring$main.coverage\" NAME=\"main Coverage Results\" MODIFIED=\"1778906218224\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$\" />\r\n    <SUITE FILE_PATH=\"coverage/azs_video_monitoring$.coverage\" NAME=\" Coverage Results\" MODIFIED=\"1778440660273\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$\" />\r\n    <SUITE FILE_PATH=\"coverage/azs_video_monitoring$libraries.coverage\" NAME=\"libraries Coverage Results\" MODIFIED=\"1778073420839\" SOURCE_PROVIDER=\"com.intellij.coverage.DefaultCoverageFileProvider\" RUNNER=\"coverage.py\" COVERAGE_BY_TEST_ENABLED=\"false\" COVERAGE_TRACING_ENABLED=\"false\" WORKING_DIRECTORY=\"$PROJECT_DIR$/tests\" />\r\n  </component>\r\n</project>
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/workspace.xml b/.idea/workspace.xml
+--- a/.idea/workspace.xml	(revision 76e83cd826887711a913f82bab718b97113a32ce)
++++ b/.idea/workspace.xml	(date 1778936536812)
+@@ -1,16 +1,13 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <project version="4">
+   <component name="ChangeListManager">
+-    <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="">
+-      <change afterPath="$PROJECT_DIR$/core/scenario_analyzer.py" afterDir="false" />
+-      <change afterPath="$PROJECT_DIR$/ui/image_stitching.py" afterDir="false" />
++    <list default="true" id="82b83ca3-84fe-4a46-98c5-0d73269c37b0" name="Changes" comment="now can work with many sources">
++      <change afterPath="$PROJECT_DIR$/repomix-output.xml" afterDir="false" />
+       <change afterPath="$PROJECT_DIR$/videos/vid1.mp4" afterDir="false" />
+       <change afterPath="$PROJECT_DIR$/videos/vid2.mp4" afterDir="false" />
+       <change afterPath="$PROJECT_DIR$/videos/vid3.mp4" afterDir="false" />
++      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+-      <change beforePath="$PROJECT_DIR$/config/sources.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/sources.json" afterDir="false" />
+-      <change beforePath="$PROJECT_DIR$/input/video_source.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_source.py" afterDir="false" />
+-      <change beforePath="$PROJECT_DIR$/input/video_thread.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_thread.py" afterDir="false" />
+       <change beforePath="$PROJECT_DIR$/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/main_window.py" afterDir="false" />
+     </list>
+     <option name="SHOW_DIALOG" value="false" />
+@@ -18,83 +15,30 @@
+     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+     <option name="LAST_RESOLUTION" value="IGNORE" />
+   </component>
+-  <component name="FileTemplateManagerImpl">
+-    <option name="RECENT_TEMPLATES">
+-      <list>
+-        <option value="Python Script" />
+-      </list>
+-    </option>
+-  </component>
+   <component name="Git.Settings">
+     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+   </component>
+-  <component name="ProjectColorInfo">{
+-  &quot;associatedIndex&quot;: 6,
+-  &quot;fromUser&quot;: false
+-}</component>
+-  <component name="ProjectId" id="3DLiSuvvW9KennuEjmAOzAnzieP" />
++  <component name="ProjectColorInfo"><![CDATA[{
++  "customColor": "",
++  "associatedIndex": 1
++}]]></component>
++  <component name="ProjectId" id="3Do0w1wzeBx58Nwoh6BUFsIA922" />
+   <component name="ProjectViewState">
+     <option name="hideEmptyMiddlePackages" value="true" />
+     <option name="showLibraryContents" value="true" />
+   </component>
+   <component name="PropertiesComponent"><![CDATA[{
+   "keyToString": {
+-    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+-    "Python tests.Python tests in TTT.py.executor": "Run",
+-    "Python tests.Python tests in test_camera.py.executor": "Run",
+-    "Python.libraries.executor": "Run",
+     "Python.main.executor": "Run",
+     "Python.main_window.executor": "Run",
+     "RunOnceActivity.ShowReadmeOnStart": "true",
+-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+     "RunOnceActivity.git.unshallow": "true",
+     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+     "codeWithMe.voiceChat.enabledByDefault": "false",
+     "git-widget-placeholder": "master",
+-    "ignore.virus.scanning.warn.message": "true",
+-    "last_opened_file_path": "C:/Users/Silya/azs-video-monitoring/videos",
+-    "nodejs_package_manager_path": "npm",
+     "vue.rearranger.settings.migration": "true"
+   }
+ }]]></component>
+-  <component name="RecentsManager">
+-    <key name="CopyFile.RECENT_KEYS">
+-      <recent name="C:\Users\Silya\azs-video-monitoring\videos" />
+-    </key>
+-  </component>
+-  <component name="RunManager">
+-    <configuration name="main" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+-      <module name="azs-video-monitoring" />
+-      <option name="ENV_FILES" value="" />
+-      <option name="INTERPRETER_OPTIONS" value="" />
+-      <option name="PARENT_ENVS" value="true" />
+-      <envs>
+-        <env name="PYTHONUNBUFFERED" value="1" />
+-      </envs>
+-      <option name="SDK_HOME" value="" />
+-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+-      <option name="IS_MODULE_SDK" value="true" />
+-      <option name="ADD_CONTENT_ROOTS" value="true" />
+-      <option name="ADD_SOURCE_ROOTS" value="true" />
+-      <option name="DEBUG_JUST_MY_CODE" value="false" />
+-      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+-      <option name="RUN_TOOL" value="" />
+-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/main.py" />
+-      <option name="PARAMETERS" value="" />
+-      <option name="SHOW_COMMAND_LINE" value="false" />
+-      <option name="EMULATE_TERMINAL" value="false" />
+-      <option name="MODULE_MODE" value="false" />
+-      <option name="REDIRECT_INPUT" value="false" />
+-      <option name="INPUT_FILE" value="" />
+-      <method v="2" />
+-    </configuration>
+-    <recent_temporary>
+-      <list>
+-        <item itemvalue="Python.main" />
+-      </list>
+-    </recent_temporary>
+-  </component>
+   <component name="SharedIndexes">
+     <attachedChunks>
+       <set>
+@@ -104,35 +48,32 @@
+   </component>
+   <component name="TaskManager">
+     <task active="true" id="Default" summary="Default task">
+-      <changelist id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="" />
+-      <created>1778067753895</created>
++      <changelist id="82b83ca3-84fe-4a46-98c5-0d73269c37b0" name="Changes" comment="now can work with many sources" />
++      <created>1778933349517</created>
+       <option name="number" value="Default" />
+       <option name="presentableId" value="Default" />
+-      <updated>1778067753895</updated>
+-      <workItem from="1778067757922" duration="4263000" />
+-      <workItem from="1778072364361" duration="12868000" />
+-      <workItem from="1778129281245" duration="7162000" />
+-      <workItem from="1778208800729" duration="77000" />
+-      <workItem from="1778209122831" duration="2112000" />
+-      <workItem from="1778436338308" duration="5328000" />
+-      <workItem from="1778472495538" duration="4600000" />
+-      <workItem from="1778565785858" duration="1915000" />
+-      <workItem from="1778650584574" duration="94000" />
+-      <workItem from="1778730379969" duration="1287000" />
+-      <workItem from="1778750730949" duration="1000" />
+-      <workItem from="1778754333903" duration="1139000" />
+-      <workItem from="1778837807698" duration="1198000" />
+-      <workItem from="1778847953103" duration="1639000" />
+-      <workItem from="1778904421609" duration="1798000" />
++      <updated>1778933349517</updated>
++      <workItem from="1778933350580" duration="3149000" />
+     </task>
+     <servers />
+   </component>
+   <component name="TypeScriptGeneratedFilesManager">
+     <option name="version" value="3" />
++  </component>
++  <component name="Vcs.Log.Tabs.Properties">
++    <option name="TAB_STATES">
++      <map>
++        <entry key="MAIN">
++          <value>
++            <State />
++          </value>
++        </entry>
++      </map>
++    </option>
+   </component>
+   <component name="com.intellij.coverage.CoverageDataManagerImpl">
+-    <SUITE FILE_PATH="coverage/azs_video_monitoring$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1778072902907" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/ui" />
+-    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1778906218224" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
++    <SUITE FILE_PATH="coverage/azs_video_monitoring$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1778933960192" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/ui" />
++    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1778936012789" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+     <SUITE FILE_PATH="coverage/azs_video_monitoring$.coverage" NAME=" Coverage Results" MODIFIED="1778440660273" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+     <SUITE FILE_PATH="coverage/azs_video_monitoring$libraries.coverage" NAME="libraries Coverage Results" MODIFIED="1778073420839" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
+   </component>
+Index: repomix-output.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/repomix-output.xml b/repomix-output.xml
+new file mode 100644
+--- /dev/null	(date 1778935773109)
++++ b/repomix-output.xml	(date 1778935773109)
+@@ -0,0 +1,2745 @@
++This file is a merged representation of the entire codebase, combined into a single document by Repomix.
++
++<file_summary>
++This section contains a summary of this file.
++
++<purpose>
++This file contains a packed representation of the entire repository's contents.
++It is designed to be easily consumable by AI systems for analysis, code review,
++or other automated processes.
++</purpose>
++
++<file_format>
++The content is organized as follows:
++1. This summary section
++2. Repository information
++3. Directory structure
++4. Repository files (if enabled)
++5. Multiple file entries, each consisting of:
++  - File path as an attribute
++  - Full contents of the file
++</file_format>
++
++<usage_guidelines>
++- This file should be treated as read-only. Any changes should be made to the
++  original repository files, not this packed version.
++- When processing this file, use the file path to distinguish
++  between different files in the repository.
++- Be aware that this file may contain sensitive information. Handle it with
++  the same level of security as you would the original repository.
++</usage_guidelines>
++
++<notes>
++- Some files may have been excluded based on .gitignore rules and Repomix's configuration
++- Binary files are not included in this packed representation. Please refer to the Repository Structure section for a complete list of file paths, including binary files
++- Files matching patterns in .gitignore are excluded
++- Files matching default ignore patterns are excluded
++- Files are sorted by Git change count (files with more changes are at the bottom)
++</notes>
++
++</file_summary>
++
++<directory_structure>
++.gitignore
++config/sources.json
++core/alert_filter.py
++core/detection.py
++core/scenario_analyzer.py
++core/zone_manager.py
++input/source_manager.py
++input/video_source.py
++input/video_thread.py
++main.py
++output/telegram_notifier.py
++requirements.txt
++tests/libraries.py
++tests/test_camera.py
++ui/image_stitching.py
++ui/main_window.py
++ui/video_widget.py
++yolov8m.pt
++</directory_structure>
++
++<files>
++This section contains the contents of the repository's files.
++
++<file path=".gitignore">
++# Byte-compiled / optimized / DLL files
++__pycache__/
++*.py[codz]
++*$py.class
++
++# C extensions
++*.so
++
++# Distribution / packaging
++.Python
++build/
++develop-eggs/
++dist/
++downloads/
++eggs/
++.eggs/
++lib/
++lib64/
++parts/
++sdist/
++var/
++wheels/
++share/python-wheels/
++*.egg-info/
++.installed.cfg
++*.egg
++MANIFEST
++
++# PyInstaller
++#  Usually these files are written by a python script from a template
++#  before PyInstaller builds the exe, so as to inject date/other infos into it.
++*.manifest
++*.spec
++
++# Installer logs
++pip-log.txt
++pip-delete-this-directory.txt
++
++# Unit test / coverage reports
++htmlcov/
++.tox/
++.nox/
++.coverage
++.coverage.*
++.cache
++nosetests.xml
++coverage.xml
++*.cover
++*.py.cover
++.hypothesis/
++.pytest_cache/
++cover/
++
++# Translations
++*.mo
++*.pot
++
++# Django stuff:
++*.log
++local_settings.py
++db.sqlite3
++db.sqlite3-journal
++
++# Flask stuff:
++instance/
++.webassets-cache
++
++# Scrapy stuff:
++.scrapy
++
++# Sphinx documentation
++docs/_build/
++
++# PyBuilder
++.pybuilder/
++target/
++
++# Jupyter Notebook
++.ipynb_checkpoints
++
++# IPython
++profile_default/
++ipython_config.py
++
++# pyenv
++#   For a library or package, you might want to ignore these files since the code is
++#   intended to run in multiple environments; otherwise, check them in:
++# .python-version
++
++# pipenv
++#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
++#   However, in case of collaboration, if having platform-specific dependencies or dependencies
++#   having no cross-platform support, pipenv may install dependencies that don't work, or not
++#   install all needed dependencies.
++#Pipfile.lock
++
++# UV
++#   Similar to Pipfile.lock, it is generally recommended to include uv.lock in version control.
++#   This is especially recommended for binary packages to ensure reproducibility, and is more
++#   commonly ignored for libraries.
++#uv.lock
++
++# poetry
++#   Similar to Pipfile.lock, it is generally recommended to include poetry.lock in version control.
++#   This is especially recommended for binary packages to ensure reproducibility, and is more
++#   commonly ignored for libraries.
++#   https://python-poetry.org/docs/basic-usage/#commit-your-poetrylock-file-to-version-control
++#poetry.lock
++#poetry.toml
++
++# pdm
++#   Similar to Pipfile.lock, it is generally recommended to include pdm.lock in version control.
++#   pdm recommends including project-wide configuration in pdm.toml, but excluding .pdm-python.
++#   https://pdm-project.org/en/latest/usage/project/#working-with-version-control
++#pdm.lock
++#pdm.toml
++.pdm-python
++.pdm-build/
++
++# pixi
++#   Similar to Pipfile.lock, it is generally recommended to include pixi.lock in version control.
++#pixi.lock
++#   Pixi creates a virtual environment in the .pixi directory, just like venv module creates one
++#   in the .venv directory. It is recommended not to include this directory in version control.
++.pixi
++
++# PEP 582; used by e.g. github.com/David-OConnor/pyflow and github.com/pdm-project/pdm
++__pypackages__/
++
++# Celery stuff
++celerybeat-schedule
++celerybeat.pid
++
++# SageMath parsed files
++*.sage.py
++
++# Environments
++.env
++.envrc
++.venv
++env/
++venv/
++ENV/
++env.bak/
++venv.bak/
++
++# Spyder project settings
++.spyderproject
++.spyproject
++
++# Rope project settings
++.ropeproject
++
++# mkdocs documentation
++/site
++
++# mypy
++.mypy_cache/
++.dmypy.json
++dmypy.json
++
++# Pyre type checker
++.pyre/
++
++# pytype static type analyzer
++.pytype/
++
++# Cython debug symbols
++cython_debug/
++
++# PyCharm
++#  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
++#  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
++#  and can be added to the global gitignore or merged into this file.  For a more nuclear
++#  option (not recommended) you can uncomment the following to ignore the entire idea folder.
++#.idea/
++
++# Abstra
++# Abstra is an AI-powered process automation framework.
++# Ignore directories containing user credentials, local state, and settings.
++# Learn more at https://abstra.io/docs
++.abstra/
++
++# Visual Studio Code
++#  Visual Studio Code specific template is maintained in a separate VisualStudioCode.gitignore 
++#  that can be found at https://github.com/github/gitignore/blob/main/Global/VisualStudioCode.gitignore
++#  and can be added to the global gitignore or merged into this file. However, if you prefer, 
++#  you could uncomment the following to ignore the entire vscode folder
++# .vscode/
++
++# Ruff stuff:
++.ruff_cache/
++
++# PyPI configuration file
++.pypirc
++
++# Cursor
++#  Cursor is an AI-powered code editor. `.cursorignore` specifies files/directories to
++#  exclude from AI features like autocomplete and code analysis. Recommended for sensitive data
++#  refer to https://docs.cursor.com/context/ignore-files
++.cursorignore
++.cursorindexingignore
++
++# Marimo
++marimo/_static/
++marimo/_lsp/
++__marimo__/
++exchange.db
++/videos/
++</file>
++
++<file path="core/alert_filter.py">
++import time
++
++class AlertFilter:
++    def __init__(self, min_presence_time=2.0, alert_cooldown=30.0, min_ratio=0.1):
++        """
++        :param min_presence_time: минимальное время в зоне для тревоги (2 секунды)
++        :param alert_cooldown: задержка между тревогами из одной зоны (30 секунд)
++        :param min_ratio: минимальная доля пересечения с отслеживаемой зоной (0.1 = 15%)
++        """
++        self.min_presence_time = min_presence_time
++        self.alert_cooldown = alert_cooldown
++        self.min_overlap_ratio = min_ratio
++
++        # Хранилища
++        self.track_zone_entry = {}    # время входа объекта в отслеживаемую зону
++        self.zone_last_alert = {}     # время последней тревоги из отслеживаемой зоны
++
++        # Статистика
++        self.total_alerts = 0
++        self.total_ignored = 0
++
++    def reset(self):
++        self.track_zone_entry.clear()
++        self.zone_last_alert.clear()
++        self.total_alerts = 0
++        self.total_ignored = 0
++
++    def process_object(self, track_id, zone_index, current_time, in_zone):
++        """
++        Обработка одного объекта
++        :param track_id: ID объекта
++        :param zone_index: индекс зоны
++        :param current_time: текущее время
++        :param in_zone: находится ли объект в зоне
++        :return: True если нужно вызвать тревогу
++        """
++        if track_id is None:
++            return False
++
++        key = (track_id, zone_index)
++
++        if not in_zone:
++            """
++            Если бъект вышел из зоны вышел из зоны, то забываем его время,
++            на случай если объект на мгновение зайдёт в отслеживаемую зону (баг трекинга/детекции)
++            """
++            self.track_zone_entry.pop(key, None)
++            return False
++
++        if key not in self.track_zone_entry:
++            self.track_zone_entry[key] = current_time
++            return False
++
++        # Проверяем, сколько времени объект находится в отслеживаемой зоне
++        time_in_zone = current_time - self.track_zone_entry[key]
++
++        if time_in_zone < self.min_presence_time:
++            return False
++
++        # Проверяем кулдаун для зоны
++        last_alert = self.zone_last_alert.get(zone_index, 0)
++        if current_time - last_alert < self.alert_cooldown:
++            self.total_ignored += 1
++            return False
++
++        self.zone_last_alert[zone_index] = current_time
++        self.total_alerts += 1
++        return True
++
++    def process_frame(self, objects, zone_manager):
++        """
++        Обрабатывает все объекты на кадре
++        :param objects: список объектов от детектора
++        :param zone_manager: ZoneManager для проверки пересечений
++        :return: список индексов зон, где нужна тревога
++        """
++        current_time = time.time()
++        alert_zones = set()
++
++        for obj in objects:
++            track_id = obj.get('track_id')
++            bbox = obj.get('bbox')
++            obj.get('area', 0)
++
++            if track_id is None or bbox is None:
++                continue
++
++            # Ищем все зоны, с которыми пересекается объект
++            intersecting_zones = zone_manager.get_all_intersections(
++                bbox, self.min_overlap_ratio
++            )
++
++            for zone_idx in intersecting_zones:
++                if self.process_object(track_id, zone_idx, current_time, in_zone=True):
++                    alert_zones.add(zone_idx)
++                    
++            for zone_idx in range(len(zone_manager.zones)):
++                if zone_idx not in intersecting_zones:
++                    key = (track_id, zone_idx)
++                    if key in self.track_zone_entry:
++                        self.process_object(track_id, zone_idx, current_time, in_zone=False)
++
++        return list(alert_zones)
++
++    def get_stats_text(self):
++        return f"Тревог: {self.total_alerts} | Игнорировано: {self.total_ignored}"
++</file>
++
++<file path="core/scenario_analyzer.py">
++class ScenarioAnalyzer:
++    """
++    Базовый анализ сценария
++    Машина приехала -> появился человек -> человек исчез -> машина исчезла
++    """
++    def __init__(self, max_wait_time=300, max_person_time=600, person_without_car_delay=10.0):
++        """
++        :param max_wait_time: максимальное время ожидания человека в машине (сек)
++        :param max_person_time: максимальное время человека в кадре (сек)
++        """
++        self.person_without_car_alerted = False
++        self.person_without_car_start_time = None
++        self.person_without_car_delay = person_without_car_delay
++        self.max_wait_time = max_wait_time
++        self.max_person_time = max_person_time
++
++        # Контроль состояний
++        self.car_present = False
++        self.person_present = False
++        self.car_appearance_time = None
++        self.person_appearance_time = None
++
++        # Флаги для предотвращения дублирования тревог
++        self.car_abandoned_alerted = False
++        self.person_too_long_alerted = False
++
++        self.alerts = []
++
++    def update(self, objects, current_time):
++        """
++        :param objects:
++        :param current_time:
++        :return: список тревог (если есть)
++        """
++        has_car = any(obj.get('class_name') == 'car' for obj in objects)
++        has_person = any(obj.get('class_name') == 'person' for obj in objects)
++
++        # человек без машины
++        if has_person and not has_car:
++            if self.person_without_car_start_time is None:
++                self.person_without_car_start_time = current_time
++                self.person_without_car_alerted = False
++            else:
++                time_without_car = current_time - self.person_without_car_start_time
++                if time_without_car >= self.person_without_car_delay and not self.person_without_car_alerted:
++                    self._add_alert("Человек появился без автомобиля", current_time)
++                    self.person_without_car_alerted = True
++        else:
++            self.person_without_car_start_time = None
++            self.person_without_car_alerted = False
++
++        # контроль состояния автомобиля
++        if has_car and not self.car_present:
++            self.car_present = True
++            self.car_appearance_time = current_time
++            self.car_abandoned_alerted = False
++
++        if not has_car and self.car_present:
++            self.car_present = False
++            self.car_appearance_time = None
++            self.car_abandoned_alerted = False
++
++        # контроль состояния человека
++        if has_person and not self.person_present:
++            self.person_present = True
++            self.person_appearance_time = current_time
++            self.person_too_long_alerted = False
++
++        if not has_person and self.person_present:
++            self.person_present = False
++            self.person_appearance_time = None
++            self.person_too_long_alerted = False
++
++        # машина стоит слишком долго и рядом нет людей
++        if self.car_present and not self.person_present and self.car_appearance_time:
++            wait_time = current_time - self.car_appearance_time
++            if wait_time > self.max_wait_time and not self.car_abandoned_alerted:
++                self._add_alert(f"Машина стоит без человека {int(wait_time)}с", current_time)
++                self.car_abandoned_alerted = True
++
++        # человек слишком долго находится на АЗС
++        if self.person_present and self.person_appearance_time:
++            person_time = current_time - self.person_appearance_time
++            if person_time > self.max_person_time and not self.person_too_long_alerted:
++                self._add_alert(f"Человек в кадре {int(person_time)}с (возможно, не заправляется)", current_time)
++                self.person_too_long_alerted = True
++
++        return self.get_alerts()
++
++    def _add_alert(self, message, current_time):
++        """
++        Создаёт тревогу
++        :param message:
++        :param current_time:
++        """
++        self.alerts.append({
++            'type': 'scenario_violation',
++            'time': current_time,
++            'message': message
++        })
++
++    def get_alerts(self):
++        alerts = self.alerts.copy()
++        self.alerts.clear()
++        return alerts
++
++    def reset(self):
++        """Полный сброс состояния"""
++        self.car_present = False
++        self.person_present = False
++        self.car_appearance_time = None
++        self.person_appearance_time = None
++        self.car_abandoned_alerted = False
++        self.person_too_long_alerted = False
++        self.alerts.clear()
++</file>
++
++<file path="tests/libraries.py">
++import torch
++print(f'PyTorch: {torch.__version__}')
++print(f'CUDA available: {torch.cuda.is_available()}')
++print(f'GPU: {torch.cuda.get_device_name(0)}')
++</file>
++
++<file path="ui/image_stitching.py">
++from PyQt6.QtWidgets import QWidget, QGridLayout, QFrame
++from PyQt6.QtCore import Qt
++from ui.video_widget import VideoWidget
++
++
++class ImageStitcher(QWidget):
++    """
++    Склеивает видео с нескольких источников в сетку
++    """
++
++    def __init__(self, parent=None):
++        super().__init__(parent)
++        self.layout = QGridLayout()
++        self.layout.setSpacing(2)
++        self.layout.setContentsMargins(0, 0, 0, 0)
++        self.setLayout(self.layout)
++
++        self.video_widgets = {}
++        self.grid_size = (2, 2)  # по умолчанию 2x2
++
++    def set_sources(self, sources):
++        """
++        получает список источников
++        """
++        count = len(sources)
++
++        # Определяем размер сетки(ограничение 16 источников)
++        if count <= 1:
++            self.grid_size = (1, 1)
++        elif count <= 4:
++            self.grid_size = (2, 2)
++        elif count <= 9:
++            self.grid_size = (3, 3)
++        else:
++            self.grid_size = (4, 4)
++
++        # Очищаем layout
++        self._clear_layout()
++
++        # Добавляем виджеты для каждого источника
++        for i, source in enumerate(sources):
++            row = i // self.grid_size[1]
++            col = i % self.grid_size[1]
++
++            if source['id'] not in self.video_widgets:
++                self.video_widgets[source['id']] = VideoWidget()
++
++            container = QFrame()
++            container.setFrameShape(QFrame.Shape.Box)
++            container.setStyleSheet("border: 1px solid #cccccc;")
++
++            layout_inner = QGridLayout()
++            layout_inner.setContentsMargins(0, 0, 0, 0)
++            layout_inner.addWidget(self.video_widgets[source['id']])
++            container.setLayout(layout_inner)
++
++            self.layout.addWidget(container, row, col)
++
++        # Заполняем пустые ячейки чёрным
++        total_cells = self.grid_size[0] * self.grid_size[1]
++        for i in range(len(sources), total_cells):
++            empty = QFrame()
++            empty.setStyleSheet("background-color: black;")
++            row = i // self.grid_size[1]
++            col = i % self.grid_size[1]
++            self.layout.addWidget(empty, row, col)
++
++    def _clear_layout(self):
++        """Очистка layout"""
++        while self.layout.count():
++            item = self.layout.takeAt(0)
++            if item.widget():
++                item.widget().deleteLater()
++
++    def update_frame(self, source_id, frame, active_zones, objects):
++        """Обновление кадра для конкретного источника"""
++        if source_id in self.video_widgets:
++            self.video_widgets[source_id].set_frame(frame, active_zones, objects)
++</file>
++
++<file path="config/sources.json">
++{
++  "sources": [
++    {
++      "id": 2,
++      "name": "Тестовое видео 1",
++      "path": "videos/vid1.mp4",
++      "enabled": true,
++      "type": "file"
++    },
++    {
++      "id": 3,
++      "name": "Тестовое видео 2",
++      "path": "videos/vid2.mp4",
++      "enabled": true,
++      "type": "file"
++    },
++    {
++      "id": 4,
++      "name": "Тестовое видео 3",
++      "path": "videos/vid3.mp4",
++      "enabled": true,
++      "type": "file"
++    }
++  ]
++}
++</file>
++
++<file path="core/detection.py">
++import time
++
++import cv2
++import torch
++from ultralytics import YOLO
++
++
++def _overlap_ratio(rect1: tuple[int, int, int, int], rect2: tuple[int, int, int, int]) -> float:
++    """
++    Процент пересечения прямоугольников, чтобы не учитывать мелкие пересечения
++    :return: отношение площади пересечения к площади прямоугольника 1
++    """
++    x1 = max(rect1[0], rect2[0])
++    y1 = max(rect1[1], rect2[1])
++    x2 = min(rect1[2], rect2[2])
++    y2 = min(rect1[3], rect2[3])
++
++    if x2 <= x1 or y2 <= y1:
++        return 0.0
++
++    intersection = (x2 - x1) * (y2 - y1)
++    area1 = (rect1[2] - rect1[0]) * (rect1[3] - rect1[1])
++
++    return intersection / max(area1, 1)
++
++
++def _rect_intersects(rect1: tuple[int, int, int, int], rect2: tuple[int, int, int, int]) -> bool:
++    """
++    Проверяем пересечение двух прямоугольников
++    :return: True если пересекаются, иначе False
++    """
++    if rect1[2] <= rect2[0] or rect2[2] <= rect1[0] or rect1[3] <= rect2[1] or rect2[3] <= rect1[1]:
++        return False
++    return True
++
++
++class MotionDetector:
++    """
++    Детектор движения на основе YOLOv8,
++    каждый объект получает уникальный ID, класс, траекторию
++    """
++
++    # Классы COCO которые нас интересуют (для АЗС)
++    WATCHED_CLASSES = {
++        0: "person",
++        1: "bicycle",
++        2: "car",
++        3: "motorcycle",
++        5: "bus",
++        7: "truck",
++        67: "phone",
++    }
++
++    # Цвета для разных классов (BGR)
++    CLASS_COLORS = {
++        0: (0, 255, 128),  # person — зелёный
++        1: (255, 200, 0),  # bicycle — голубой
++        2: (255, 128, 0),  # car — синий
++        3: (0, 200, 255),  # motorcycle — оранжевый
++        5: (255, 0, 128),  # bus — розовый
++        7: (128, 0, 255),  # truck — фиолетовый
++        67: (0, 255, 255),  # phone - жёлтый
++    }
++
++    def __init__(self, model_name="yolov8m.pt", confidence=0.5, device=None,
++                 watched_classes = None, draw_rectangles=True):
++        """
++        Инициализация детектора движения
++        :param model_name: имя файла модели YOLO
++        :param confidence: минимальная уверенность детекции (0.0 - 1.0)
++        :param device: устройство для вычислений ('cuda', 'cpu' или None для автоопределения)
++        :param draw_rectangles: отрисовывать рамки и зоны на кадре
++        """
++
++        if device is None:
++            self.device = "cuda" if torch.cuda.is_available() else "cpu"
++        else:
++            self.device = device
++
++        print(self.device)
++        self.model = YOLO(model_name)
++        if self.device == "cuda":
++            self.model.to("cuda")
++
++        self.draw_rectangles = draw_rectangles
++
++        self.watched_classes = watched_classes or {0, 2, 5, 7}
++
++        # Параметры обнаружения
++        self.confidence = confidence
++        self.frame_count = 0
++        self.detection_time = 0.0
++
++        # История траекторий
++        self.trajectories = {}
++        self.max_trajectory_length = 50
++
++        # Время первого обнаружения
++        self.track_first_seen = {}
++
++        # Время последнего обнаружения (для очистки старых треков)
++        self.track_last_seen = {}
++        self.track_timeout = 3.0
++
++    def detect(self, frame, forbidden_zones: list[tuple[int, int, int, int]] | None = None):
++        """
++        Детекция + трекинг из YOLO
++        :param frame: кадр
++        :param forbidden_zones: список отслеживаемых зон
++        :return: список обнаруженных объектов и аннотированный кадр
++        """
++        if forbidden_zones is None:
++            forbidden_zones = []
++
++        self.frame_count += 1
++        current_time = time.time()
++
++        start_time = time.time()
++
++        # YOLO + ByteTrack
++        """
++        args: source - источник изображения,
++        persist говорит о том, что это следующее изображение после предыдущего,
++        и стоит ожидать объекты с прошлого изображения,
++        classes - отслеживаемые классы,
++        confidence - порог уверенности,
++        iou (Intersection over Union) - это метрика, которая показывает, насколько сильно два прямоугольника пересекаются.
++        то есть алгоритм может нарисовать 5 рамок вокруг одного и того же объекта, этот порог удалит лишние рамки,
++        оставив одну с самой высокой уверенностью, выберем 0.5, т.к. на АЗС нам нужно различать крупные, непересекающиеся объекты
++        tracker - модель трекера, по дефолту BoT-SORT - botsort.yaml, но выберем ByteTrack - bytetrack.yaml
++        verbose это параметр, который включает или отключает подробные сообщения в консоль.
++        """
++        results = self.model.track(
++            frame,
++            persist=True,
++            classes=list(self.WATCHED_CLASSES.keys()),
++            conf=self.confidence,
++            iou=0.5,
++            tracker="bytetrack.yaml",
++            verbose=False,
++            device=self.device,
++        )
++
++        self.detection_time = time.time() - start_time
++
++        moving_objects: list[dict] = []
++        active_tracks: set[int] = set()
++
++        if results is not None and len(results) > 0 and results[0].boxes is not None:
++            boxes = results[0].boxes
++            xyxy = boxes.xyxy.cpu().numpy()
++            conf = boxes.conf.cpu().numpy()
++            cls = boxes.cls.cpu().numpy()
++            ids = boxes.id.cpu().numpy() if boxes.id is not None else None
++
++            for i in range(len(boxes)):
++                # Координаты
++                x1, y1, x2, y2 = xyxy[i].astype(int)
++                w = x2 - x1
++                h = y2 - y1
++    
++                # Класс
++                cls_id = int(cls[i])
++                cls_name = self.WATCHED_CLASSES.get(cls_id, f"class_{cls_id}")
++    
++                # Track ID
++                track_id = None
++                if ids is not None:
++                    track_id = int(ids[i])
++                    active_tracks.add(track_id)
++    
++                    # Обновляем траекторию
++                    center_x = (x1 + x2) // 2
++                    center_y = (y1 + y2) // 2
++    
++                    if track_id not in self.trajectories:
++                        self.trajectories[track_id] = []
++                        self.track_first_seen[track_id] = current_time
++    
++                    self.trajectories[track_id].append((center_x, center_y))
++                    self.track_last_seen[track_id] = current_time
++    
++                    # Ограничиваем длину траектории
++                    if len(self.trajectories[track_id]) > self.max_trajectory_length:
++                        self.trajectories[track_id] = \
++                            self.trajectories[track_id][-self.max_trajectory_length:]
++    
++                # Проверяем пересечение с запретными зонами
++                in_zone = False
++                zone_index = None
++    
++                for zi, (zx, zy, zw, zh) in enumerate(forbidden_zones):
++                    if _rect_intersects(
++                            (x1, y1, x2, y2),
++                            (zx, zy, zx + zw, zy + zh)
++                    ):
++                        # Считаем долю пересечения
++                        overlap = _overlap_ratio(
++                            (x1, y1, x2, y2),
++                            (zx, zy, zx + zw, zy + zh)
++                        )
++                        if overlap > 0.1:  # минимум 10% пересечения
++                            in_zone = True
++                            zone_index = zi
++                            break
++    
++                # Время в кадре
++                time_tracked = 0
++                if track_id and track_id in self.track_first_seen:
++                    time_tracked = current_time - self.track_first_seen[track_id]
++    
++                moving_objects.append({
++                    'bbox': (x1, y1, w, h),
++                    'in_zone': in_zone,
++                    'zone_index': zone_index,
++                    'area': w * h,
++                    'track_id': track_id,
++                    'class_id': cls_id,
++                    'class_name': cls_name,
++                    'confidence': float(conf[i]),
++                    'time_tracked': time_tracked,
++                })
++
++        # Очищаем старые треки
++        self._cleanup_old_tracks(current_time, active_tracks)
++
++        # Отрисовка
++        annotated_frame = frame.copy()
++        if self.draw_rectangles:
++            self._draw_frame(annotated_frame, moving_objects, forbidden_zones)
++
++        return moving_objects, annotated_frame
++
++    def _cleanup_old_tracks(self, current_time, active_ids):
++        """
++        Удаление треков которые давно не обновлялись
++        :param current_time: текущее время в секундах
++        :param active_ids: множество активных идентификаторов треков
++        """
++        expired = []
++        for tid, last_seen in self.track_last_seen.items():
++            if tid not in active_ids and \
++                    (current_time - last_seen) > self.track_timeout:
++                expired.append(tid)
++
++        for tid in expired:
++            self.trajectories.pop(tid, None)
++            self.track_first_seen.pop(tid, None)
++            self.track_last_seen.pop(tid, None)
++
++    def _draw_frame(self, frame, objects, zones):
++        """
++        Отрисовка зон, объектов и траекторий на кадре
++        :param frame: кадр для отрисовки (модифицируется на месте)
++        :param objects: список обнаруженных объектов
++        :param zones: список запрещённых зон для отрисовки
++        :return:
++        """
++        # Отслеживаемые зоны
++        for i, (zx, zy, zw, zh) in enumerate(zones):
++            # Полупрозрачная заливка
++            overlay = frame.copy()
++            cv2.rectangle(overlay, (zx, zy), (zx + zw, zy + zh), (0, 100, 255), -1)
++            cv2.addWeighted(overlay, 0.12, frame, 0.88, 0, frame)
++
++            # Рамка
++            cv2.rectangle(frame, (zx, zy), (zx + zw, zy + zh), (0, 150, 255), 2)
++
++            # Название
++            label = f"Зона {i}"
++            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
++            cv2.rectangle(frame, (zx, zy - th - 10), (zx + tw + 8, zy), (0, 150, 255), -1)
++            cv2.putText(frame, label, (zx + 4, zy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
++
++        # Объекты
++        for obj in objects:
++            x, y, w, h = obj['bbox']
++            track_id = obj.get('track_id')
++            cls_name = obj.get('class_name', '?')
++            conf = obj.get('confidence', 0)
++            time_tracked = obj.get('time_tracked', 0)
++            cls_id = obj.get('class_id', 0)
++
++            # Цвет по классу
++            base_color = self.CLASS_COLORS.get(cls_id, (0, 255, 0))
++
++            if obj['in_zone']:
++                color = (0, 0, 255)
++                thickness = 3
++                # Красная заливка если есть движение в зоне
++                overlay = frame.copy()
++                cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 0, 255), -1)
++                cv2.addWeighted(overlay, 0.2, frame, 0.8, 0, frame)
++            else:
++                color = base_color
++                thickness = 2
++
++            # Рамка объекта
++            cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
++
++            # Метка
++            id_str = f"#{track_id}" if track_id is not None else ""
++            time_str = f"{time_tracked:.0f}с" if time_tracked > 1 else ""
++            label = f"{cls_name}{id_str} {conf:.0%} {time_str}"
++
++            if obj['in_zone']:
++                label = f"Тревога {label} Зона {obj['zone_index']}"
++
++            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
++            cv2.rectangle(frame, (x, y - th - 10), (x + tw + 6, y), color, -1)
++            cv2.putText(frame, label, (x + 3, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
++
++            # Траектория
++            if track_id and track_id in self.trajectories:
++                points = self.trajectories[track_id]
++                if len(points) > 1:
++                    for j in range(1, len(points)):
++                        alpha = j / len(points)
++                        pt_color = tuple(int(c * alpha) for c in color)
++                        cv2.line(frame, points[j - 1], points[j], pt_color, 2)
++
++    def reset(self):
++        """
++        Сброс состояния трекера
++        :return:
++        """
++        self.trajectories.clear()
++        self.track_first_seen.clear()
++        self.track_last_seen.clear()
++        self.frame_count = 0
++</file>
++
++<file path="output/telegram_notifier.py">
++import os
++import threading
++import time
++from datetime import datetime
++
++import cv2
++import requests
++
++TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
++TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
++TELEGRAM_COOLDOWN_SECONDS = 10.0
++
++class TelegramNotifier:
++    def __init__(self):
++        self.bot_token = TELEGRAM_BOT_TOKEN
++        self.chat_id = TELEGRAM_CHAT_ID
++        self.cooldown = TELEGRAM_COOLDOWN_SECONDS
++
++        self.last_sent_time = {}
++        self.enabled = True
++        self._lock = threading.Lock()
++
++        self.total_sent = 0
++        self.total_errors = 0
++
++    def send_alert(self, zone_index, zone_name=None, frame=None):
++        if not self.enabled:
++            return False
++
++        with self._lock:
++            now = time.time()
++            last = self.last_sent_time.get(zone_index, 0)
++
++            if now - last < self.cooldown:
++                return False
++
++            self.last_sent_time[zone_index] = now
++
++        thread = threading.Thread(
++            target=self._send_alert_impl,
++            args=(zone_index, zone_name, frame),
++            daemon=True
++        )
++        thread.start()
++        return True
++
++    def _send_alert_impl(self, zone_index, zone_name=None, frame=None):
++        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
++        name = zone_name or f"Зона {zone_index}"
++
++        try:
++            if frame is not None:
++                # Проверяем что кадр валидный
++                if frame.size == 0 or frame.shape[0] == 0 or frame.shape[1] == 0:
++                    print(f"[Telegram] ⚠️ Пустой кадр, отправляем текст")
++                    self._send_text_alert(name, timestamp)
++                    return
++
++                # Добавляем надписи на кадр
++                annotated = frame.copy()
++
++                cv2.putText(
++                    annotated, timestamp,
++                    (10, annotated.shape[0] - 20),
++                    cv2.FONT_HERSHEY_SIMPLEX, 0.7,
++                    (0, 255, 255), 2
++                )
++                cv2.putText(
++                    annotated, f"ALERT: {name}",
++                    (10, 30),
++                    cv2.FONT_HERSHEY_SIMPLEX, 0.8,
++                    (0, 0, 255), 2
++                )
++
++                h, w = annotated.shape[:2]
++                if w > 1920 or h > 1080:
++                    scale = min(1920 / w, 1080 / h)
++                    new_w = int(w * scale)
++                    new_h = int(h * scale)
++                    annotated = cv2.resize(annotated, (new_w, new_h))
++
++                caption = (
++                    f"Внимание\n"
++                    f"Зона: {name}\n"
++                    f"Время: {timestamp}\n"
++                    f"Движение в запретной зоне"
++                )
++
++                self._send_photo(caption, annotated)
++            else:
++                self._send_text_alert(name, timestamp)
++
++            self.total_sent += 1
++            print(f"[Telegram] Отправлено: {name} (всего: {self.total_sent})")
++
++        except Exception as e:
++            self.total_errors += 1
++            print(f"[Telegram] Ошибка: {e}")
++
++            try:
++                self._send_text_alert(name, timestamp)
++                self.total_sent += 1
++                print(f"[Telegram] Отправлено (текст)")
++            except Exception as e2:
++                print(e2)
++
++    def _send_text_alert(self, name, timestamp):
++        """Отправка текстового сообщения"""
++        text = (
++            f"<b>Внимание - АЗС Мониторинг</b>\n\n"
++            f"<b>Зона:</b> {name}\n"
++            f"<b>Время:</b> {timestamp}\n"
++            f"Обнаружено движение в отслеживаемой зоне"
++        )
++        self._send_text(text)
++
++    def _send_text(self, text):
++        url = f"https://api.telegram.org/bot{self.bot_token}/sendMessage"
++        payload = {
++            "chat_id": self.chat_id,
++            "text": text,
++            "parse_mode": "HTML"
++        }
++        response = requests.post(url, json=payload, timeout=10)
++
++        if not response.ok:
++            error_info = response.json() if response.headers.get(
++                'content-type', ''
++            ).startswith('application/json') else response.text
++            print(f"[Telegram] Ответ API: {error_info}")
++
++        response.raise_for_status()
++
++    def _send_photo(self, caption, frame):
++        url = f"https://api.telegram.org/bot{self.bot_token}/sendPhoto"
++
++        # Кодируем в JPEG
++        success, buffer = cv2.imencode(
++            '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 85]
++        )
++
++        if not success:
++            raise ValueError("Не удалось закодировать кадр в JPEG")
++
++        photo_bytes = buffer.tobytes()
++
++        size_mb = len(photo_bytes) / (1024 * 1024)
++        if size_mb > 9:
++            success, buffer = cv2.imencode(
++                '.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50]
++            )
++            if not success:
++                raise ValueError("Не удалось сжать кадр")
++            photo_bytes = buffer.tobytes()
++            print(f"[Telegram] Фото сжато: {size_mb:.1f}MB → "
++                  f"{len(photo_bytes) / (1024 * 1024):.1f}MB")
++
++        if len(caption) > 1024:
++            caption = caption[:1020] + "..."
++
++        files = {
++            "photo": ("alert.jpg", photo_bytes, "image/jpeg")
++        }
++        data = {
++            "chat_id": self.chat_id,
++            "caption": caption,
++        }
++
++        response = requests.post(url, data=data, files=files, timeout=15)
++
++        if not response.ok:
++            # Логируем подробную ошибку от Telegram API
++            try:
++                error_info = response.json()
++                print(f"[Telegram] API ответ: {error_info}")
++            except Exception:
++                print(f"[Telegram] Ответ: {response.text}")
++
++        response.raise_for_status()
++</file>
++
++<file path="requirements.txt">
++torch>=2.0.0
++torchvision>=0.15.0
++ultralytics>=8.0.0
++opencv-python>=4.8.0
++numpy>=1.24.0
++PyQt6>=6.5.0
++python-dotenv>=1.0.0
++requests>=2.31.0
++nvidia-ml-py3>=7.352.0
++pyqt6-sip
++</file>
++
++<file path="tests/test_camera.py">
++import unittest
++import cv2
++
++class TestCameraAccess(unittest.TestCase):
++    def test_camera_index_0_available(self):
++        print("\n[TEST] Проверка камеры с индексом 0...")
++
++        cap = cv2.VideoCapture(0)
++
++        self.assertIsNotNone(cap, "cv2.VideoCapture вернул None")
++
++        is_opened = cap.isOpened()
++        self.assertTrue(is_opened, "Камера с индексом 0 не открылась")
++
++        if is_opened:
++            print("Камера открыта")
++            cap.release()
++        else:
++            print("Камера не открылась")
++
++    def test_camera_can_read_frame(self):
++        print("\n[TEST] Проверка чтения кадра с камеры 0...")
++
++        cap = cv2.VideoCapture(0)
++
++        if not cap.isOpened():
++            self.skipTest("Камера не открылась")
++
++        ret, frame = cap.read()
++
++        self.assertTrue(ret, "Не удалось прочитать кадр с камеры")
++        self.assertIsNotNone(frame, "Кадр равен None")
++
++        if frame is not None:
++            height, width = frame.shape[:2]
++            print(f"  Размер кадра: {width}x{height}")
++            self.assertGreater(width, 0, "Ширина кадра = 0")
++            self.assertGreater(height, 0, "Высота кадра = 0")
++
++        cap.release()
++        print("Чтение кадра успешно")
++</file>
++
++<file path="core/zone_manager.py">
++import json
++import os
++
++
++class ZoneManager:
++    def __init__(self, camera_id = None):
++        self.camera_id = camera_id
++        self.zones = []
++        self.zone_names = []
++
++    def set_zones(self, zones, zone_names=None):
++        """Задать отслеживаемые зоны"""
++        self.zones = zones.copy()
++        if zone_names:
++            self.zone_names = zone_names.copy()
++        else:
++            self.zone_names = [f"Зона {i}" for i in range(len(zones))]
++
++    def clear_zones(self):
++        self.zones.clear()
++        self.zone_names.clear()
++
++    def check_intersection(self, bbox, zone_index, min_ratio=0.1):
++        """
++        Проверяет пересечение bbox объекта с отслеживаемой зоной
++        :param bbox: (x, y, w, h) объекта
++        :param zone_index: индекс зоны
++        :param min_ratio: минимальная доля пересечения (10%)
++        :return: True если пересекается достаточно, иначе False
++        """
++        if zone_index >= len(self.zones):
++            return False
++
++        x1, y1, w, h = bbox
++        x2, y2 = x1 + w, y1 + h
++
++        zx, zy, zw, zh = self.zones[zone_index]
++        zx2, zy2 = zx + zw, zy + zh
++
++        ix1 = max(x1, zx)
++        iy1 = max(y1, zy)
++        ix2 = min(x2, zx2)
++        iy2 = min(y2, zy2)
++
++        if ix2 <= ix1 or iy2 <= iy1:
++            return False  # нет пересечения
++
++        # noinspection PyUnresolvedReferences
++        intersection_area = (ix2 - ix1) * (iy2 - iy1)
++        object_area = w * h
++
++        overlap_ratio = intersection_area / max(object_area, 1)
++
++        return overlap_ratio >= min_ratio
++
++    def get_all_intersections(self, bbox, min_ratio=0.1):
++        """Возвращает список индексов зон, с которыми пересекается объект"""
++        result = []
++        for i in range(len(self.zones)):
++            if self.check_intersection(bbox, i, min_ratio):
++                result.append(i)
++        return result
++
++    def save_to_file(self, filepath):
++        """Сохранить зоны в JSON файл"""
++        data = {
++            "camera_id": self.camera_id,
++            "zones": []
++        }
++
++        for i, (x, y, w, h) in enumerate(self.zones):
++            name = self.zone_names[i] if i < len(self.zone_names) else f"Зона {i}"
++            data["zones"].append({
++                "name": name,
++                "x": x, "y": y, "w": w, "h": h
++            })
++
++        os.makedirs(os.path.dirname(filepath), exist_ok=True)
++        with open(filepath, 'w', encoding='utf-8') as f:
++            json.dump(data, f, ensure_ascii=False, indent=2)
++        return True
++
++    def load_from_file(self, filepath):
++        """Загрузить зоны из файла"""
++        if not os.path.exists(filepath):
++            return False
++
++        try:
++            with open(filepath, 'r', encoding='utf-8') as f:
++                data = json.load(f)
++
++            self.camera_id = data.get("camera_id")
++            self.zones.clear()
++            self.zone_names.clear()
++
++            for zone_data in data.get("zones", []):
++                x = zone_data.get("x", 0)
++                y = zone_data.get("y", 0)
++                w = zone_data.get("w", 0)
++                h = zone_data.get("h", 0)
++                name = zone_data.get("name", f"Зона {len(self.zones)}")
++
++                self.zones.append((x, y, w, h))
++                self.zone_names.append(name)
++
++            return True
++        except Exception as e:
++            print(f"Ошибка загрузки зон: {e}")
++            return False
++</file>
++
++<file path="main.py">
++import sys
++
++from PyQt6.QtWidgets import QApplication
++from PyQt6.QtGui import QFont
++from input.source_manager import SourceManager
++from input.video_thread import VideoThread
++from ui.main_window import MainWindow
++
++
++def main():
++    app = QApplication(sys.argv)
++
++    font = QFont("Segoe UI", 10)
++    app.setFont(font)
++
++    source_manager = SourceManager()
++    video_thread = VideoThread(source_manager)
++
++    window = MainWindow(video_thread, source_manager)
++    window.show()
++
++    sys.exit(app.exec())
++
++
++if __name__ == "__main__":
++    main()
++</file>
++
++<file path="input/video_source.py">
++import cv2
++import threading
++import time
++
++from collections import deque
++
++class VideoSource:
++    """
++    Источник видео: USB-камера или IP-камера (RTSP)
++    """
++
++    def __init__(self, source_id: int, name: str, source_path: str):
++        """
++        инициализация источника
++        :param source_id: идентификатор
++        :param name: название
++        :param source_path: путь к источнику
++        """
++        self._thread = None
++        self.source_id = source_id
++        self.name = name
++        self.source_path = source_path
++        self.cap = None
++        self.is_connected = False
++        self.last_frame = None
++        self._lock = threading.Lock()
++        self._running = False
++        self._Thread = None
++        self.fps = 60
++        self.frame_buffer = deque(maxlen=2)
++        self.zones_file = f"config/zones_cam_{source_id}.json"
++
++    def connect(self) -> bool:
++        """
++        Подключение к источнику
++        :return: True если подключено успешно, иначе False
++        """
++        try:
++            if self.cap:
++                self.cap.release()
++
++            if isinstance(self.source_path, int):
++                # USB-камера
++                self.cap = cv2.VideoCapture(self.source_path)
++                print(f"[{self.name}] Подключение к USB камере (индекс: {self.source_path})")
++            elif isinstance(self.source_path, str) and self.source_path.startswith("rtsp://"):
++                # IP-камера (RTSP)
++                self.cap = cv2.VideoCapture(self.source_path)
++                print(f"[{self.name}] Подключение к IP-камере (RTSP): {self.source_path[:50]}...")
++            elif isinstance(self.source_path, str) and self.source_path.endswith(('.mp4', '.avi', '.mov', '.mkv')):
++                # Файл
++                self.cap = cv2.VideoCapture(self.source_path)
++                print(f"[{self.name}] Подключение к видеофайлу: {self.source_path}")
++            else:
++                print(f"[{self.name}] Ошибка: неподдерживаемый тип источника (только USB камера или RTSP)")
++                return False
++
++            if self.cap and self.cap.isOpened():
++                self.is_connected = True
++
++                self.fps = self.cap.get(cv2.CAP_PROP_FPS)
++                if self.fps <= 0:
++                    self.fps = 60
++
++                print(f"[{self.name}] Подключен (FPS: {self.fps:.1f})")
++                return True
++
++            else:
++                print(f"[{self.name}] Ошибка подключения")
++                self.is_connected = False
++                return False
++
++        except Exception as e:
++            print(f"[{self.name}] Ошибка: {e}")
++            self.is_connected = False
++            return False
++
++    def start_capture(self):
++        """
++        Запуск захвата видео
++        """
++        if self._running:
++            return
++
++        self._running = True
++        self._thread = threading.Thread(target=self._capture_loop, daemon=True)
++        self._thread.start()
++        print(f"[{self.name}] Запущен поток захвата")
++
++    def _capture_loop(self):
++        """
++        Цикл захвата кадров
++        """
++        while self._running:
++            if not self.is_connected:
++                time.sleep(1)
++                self.connect()
++                continue
++
++            if self.cap and self.cap.isOpened():
++                ret, frame = self.cap.read()
++
++                if ret and frame is not None:
++                    with self._lock:
++                        self.frame_buffer.append(frame.copy())
++
++                else:
++                    self.is_connected = False
++                    print(f"[{self.name}] Потеря соединения с камерой")
++            time.sleep(0.01)
++
++    def get_last_frame(self):
++        """
++        Получение последнего кадра из буфера
++        :return: ndarray или же None
++        """
++        with self._lock:
++            if self.frame_buffer:
++                return self.frame_buffer[-1].copy()
++            if self.last_frame:
++                return self.last_frame.copy()
++        return None
++
++    def stop(self):
++        """
++        Остановка захвата, освобождение ресурсов
++        """
++        self._running = False
++        if self._thread:
++            self._thread.join(timeout=1)
++        if self.cap:
++            self.cap.release()
++            print(f"[{self.name}] Остановлен")
++
++    def get_stats(self):
++        """
++        :return: Словарь со статистикой
++        """
++        return {
++            'id': self.source_id,
++            'name': self.name,
++            'connected': self.is_connected,
++            'fps': self.fps,
++            'path': self.source_path
++        }
++</file>
++
++<file path="input/source_manager.py">
++import json
++import os
++
++from input.video_source import VideoSource
++
++class SourceManager:
++    def __init__(self, config_file: str = "config/sources.json"):
++        self.config_file = config_file
++        self.sources: dict[int, VideoSource] = {}  # id -> VideoSource
++        self.active_source_id: int | None = None
++        self.load_config()
++
++    def load_config(self):
++        if not os.path.exists(self.config_file):
++            self._create_default_config()
++            return
++
++        try:
++            with open(self.config_file, "r", encoding="utf-8") as f:
++                data = json.load(f)
++
++            for src_data in data.get("sources", []):
++                if src_data.get("enabled", True):
++                    source = VideoSource(
++                        source_id=src_data.get("id"),
++                        name=src_data.get("name"),
++                        source_path=src_data.get("path"),
++                        )
++                    self.sources[src_data.get("id")] = source
++
++            print(f"Загружено {len(self.sources)} источников видео")
++
++        except Exception as e:
++            print(f"Ошибка загрузки: {e}")
++
++    def _create_default_config(self):
++        """
++        Создание конфигурации по умолчанию если нет файла
++        """
++        os.makedirs('config', exist_ok=True)
++
++        default_config = {
++            "sources": [
++                {
++                    "id": 1,
++                    "name": "USB камера 0",
++                    "path": 0,
++                    "enabled": True,
++                    "type": "usb"
++                }
++            ]
++        }
++        with open(self.config_file, "w", encoding="utf-8") as f:
++            json.dump(default_config, f, ensure_ascii=False, indent=2)
++
++    def connect_source(self, source_id):
++        """
++        Подключение к источнику
++        """
++        if source_id in self.sources:
++            if self.sources[source_id].connect():
++                self.sources[source_id].start_capture()
++                return True
++        return False
++
++    def connect_all(self):
++        """Подключение и запуск всех источников"""
++        for source in self.sources.values():
++            if source.connect():
++                source.start_capture()
++        print(f"Запущено источников: {len(self.sources)}")
++
++    def get_source(self, source_id: int) -> VideoSource | None:
++        """
++        Получить по id
++        :param source_id: идентификатор
++        :return: источник видео
++        """
++        return self.sources.get(source_id)
++
++    def get_active_source(self) -> VideoSource | None:
++        """
++        :return: источник или None
++        """
++        if self.active_source_id is not None:
++            return self.sources.get(self.active_source_id)
++        return None
++
++    def set_active_source(self, source_id):
++        if source_id in self.sources:
++            self.active_source_id = source_id
++            print(f"Активный источник: {self.sources[source_id].name}")
++
++    def get_all_sources(self):
++        """
++        :return: список источников
++        """
++        return list(self.sources.values())
++
++    def get_sources_list(self):
++        """
++        Получить список источников для UI
++        """
++        result = []
++        for src in self.sources.values():
++            result.append({
++                'id': src.source_id,
++                'name': src.name,
++                'connected': src.is_connected,
++                'path': src.source_path
++            })
++        return result
++
++    def stop_all(self):
++        """
++        Остановка всех источников
++        """
++        for source in self.sources.values():
++            source.stop()
++
++    def get_frame(self, source_id):
++        """
++        :return: последний кадр или None
++        """
++        source = self.sources.get(source_id)
++        if source:
++            return source.get_last_frame()
++        return None
++
++    def add_ip_source(self, name, rtsp_url):
++        """
++        Добавить IP-камеру (RTSP)
++        """
++        if self.sources:
++            new_id = max(self.sources.keys()) + 1
++        else:
++            new_id = 1
++
++        source = VideoSource(new_id, name, rtsp_url)
++        self.sources[new_id] = source
++        self._save_config()
++        return new_id
++
++    def remove_source(self, source_id):
++        """
++        Удалить источник
++        """
++        if source_id in self.sources:
++            self.sources[source_id].stop()
++            del self.sources[source_id]
++            if self.active_source_id == source_id:
++                self.active_source_id = None
++            self._save_config()
++
++    def _save_config(self):
++        """Сохранить конфигурацию"""
++        data = {"sources": []}
++        for src in self.sources.values():
++            data["sources"].append({
++                "id": src.source_id,
++                "name": src.name,
++                "path": src.source_path,
++                "enabled": True,
++                "type": "usb" if isinstance(src.source_path, int) else "ip"
++            })
++
++        with open(self.config_file, 'w', encoding='utf-8') as f:
++            json.dump(data, f, ensure_ascii=False, indent=2)
++
++    def get_zones_file(self, source_id):
++        """Получить путь к файлу зон для камеры"""
++        source = self.sources.get(source_id)
++        if source:
++            return source.zones_file
++        return None
++</file>
++
++<file path="ui/video_widget.py">
++import cv2
++import numpy as np
++from PyQt6.QtWidgets import QLabel, QInputDialog
++from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
++from PyQt6.QtCore import Qt, QRect, pyqtSignal, QTimer
++
++
++class VideoWidget(QLabel):
++    zone_added = pyqtSignal(list)
++
++    def __init__(self):
++        super().__init__()
++        # Текущий кадр, зоны, имена зон, обнаруженные объекты
++        self.current_pixmap = None
++        self.zones = []
++        self.zone_names = []
++        self.active_zones = []
++        self.moving_objects = []
++
++        # Рисует ли сейчас пользователь зону (начальная и конечная точки)
++        self.drawing = False
++        self.start_point = None
++        self.end_point = None
++
++        self.frame_width = 0
++        self.frame_height = 0
++
++        self.draw_rectangles = True
++
++        self.loading = True  # показываем загрузку, пока нет кадров
++        self.loading_angle = 0  # угол для анимации
++        self.loading_timer = QTimer()
++        self.loading_timer.timeout.connect(self._rotate_loading)
++        self.loading_timer.start(50)
++
++        self.setMinimumSize(640, 480)
++        self.setStyleSheet("background-color: #f0f0f0; border:1px solid #cccccc;")
++        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
++
++    def set_frame(self, frame, active_zones=None, moving_objects=None):
++        self.loading = False
++        self.loading_timer.stop()
++
++        self.active_zones = active_zones or []
++        self.moving_objects = moving_objects or []
++
++        rgb = np.asarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
++        h, w, ch = rgb.shape
++
++        self.frame_width = int(w)
++        self.frame_height = int(h)
++
++        bytes_per_line = int(ch * w)
++        image = QImage(
++            rgb.tobytes(), self.frame_width, self.frame_height,
++            bytes_per_line, QImage.Format.Format_RGB888
++        ).copy()
++
++        self.current_pixmap = QPixmap.fromImage(image)
++        self.update()
++
++    def paintEvent(self, event):
++        painter = QPainter(self)
++
++        if self.loading:
++            painter.fillRect(self.rect(), QColor(240, 240, 240))
++
++            center = self.rect().center()
++            radius = 30
++
++            spinner_center_y = center.y() - 30
++            pen = QPen(QColor(66, 133, 244), 4)
++            painter.setPen(pen)
++            start_angle = self.loading_angle * 16
++            span_angle = 120 * 16
++            painter.drawArc(center.x() - radius, spinner_center_y - radius,
++                            radius * 2, radius * 2, start_angle, span_angle)
++
++            font = QFont("Arial", 12, QFont.Weight.Normal)
++            painter.setFont(font)
++            painter.setPen(QColor(100, 100, 100))
++            text_rect = QRect(center.x() - 150, spinner_center_y + 40, 300, 30)
++            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, "Соединение...")
++
++            painter.end()
++            return
++
++        if self.current_pixmap:
++            painter.drawPixmap(self.rect(), self.current_pixmap)
++
++        if not self.draw_rectangles:
++            painter.end()
++            return
++
++        for i, zone in enumerate(self.zones):
++            rect = QRect(*zone)
++
++            if i in self.active_zones:
++                pen = QPen(QColor(255, 0, 0), 3)
++                painter.setPen(pen)
++                painter.setBrush(QColor(255, 0, 0, 25))
++            else:
++                pen = QPen(QColor(0, 165, 255), 2, Qt.PenStyle.DashLine)
++                painter.setPen(pen)
++                painter.setBrush(QColor(0, 165, 255, 25))
++
++            painter.drawRect(rect)
++            painter.setBrush(Qt.BrushStyle.NoBrush)
++
++            # подписываем название
++            name = self.zone_names[i] if i < len(self.zone_names) else f"Зона {i}"
++            font = QFont("Arial", 9, QFont.Weight.Bold)
++            painter.setFont(font)
++            painter.drawText(rect.x() + 4, rect.y() + 14, name)
++
++        if self.drawing and self.start_point and self.end_point:
++            pen = QPen(QColor(Qt.GlobalColor.yellow), 2, Qt.PenStyle.DashLine)
++            painter.setPen(pen)
++            painter.setBrush(QColor(255, 255, 0, 25))
++            rect = QRect(self.start_point, self.end_point)
++            painter.drawRect(rect)
++
++        painter.end()
++
++    def _rotate_loading(self):
++        if self.loading:
++            self.loading_angle = (self.loading_angle + 30) % 360
++            self.update()
++
++    def mousePressEvent(self, event):
++        if event.button() == Qt.MouseButton.LeftButton:
++            self.drawing = True
++            self.start_point = event.pos()
++            self.end_point = event.pos()
++
++    def mouseMoveEvent(self, event):
++        if self.drawing:
++            self.end_point = event.pos()
++            self.update()
++
++    def mouseReleaseEvent(self, event):
++        if event.button() == Qt.MouseButton.LeftButton and self.drawing:
++            self.drawing = False
++            rect = QRect(self.start_point, self.end_point).normalized()
++
++            if rect.width() < 20 or rect.height() < 20:
++                return
++
++            zone_name, ok = QInputDialog.getText(
++                self,
++                "Добавление зоны",
++                "Введите название зоны",
++                text=f"Зона {len(self.zones)}"
++            )
++
++            if not ok or not zone_name:
++                zone_name = f"Зона {len(self.zones)}"
++
++            zone = (rect.x(), rect.y(), rect.width(), rect.height())
++            self.zones.append(zone)
++            self.zone_names.append(zone_name)
++
++            print(f"Добавлена зона: {zone} -> {zone_name}")
++            self.zone_added.emit(self.zones)
++            self.update()
++
++    def mouseDoubleClickEvent(self, event):
++        pos = event.pos()
++
++        for i, zone in enumerate(self.zones):
++            rect = QRect(*zone)
++            if rect.contains(pos):
++                new_name, ok = QInputDialog.getText(
++                    self,
++                    "Редактирование зоны",
++                    f"Введите новое название для зоны {i}:",
++                    text=self.zone_names[i]
++                )
++                if ok and new_name:
++                    self.zone_names[i] = new_name
++                    self.zone_added.emit(self.zones)  # обновляем
++                    self.update()
++                    print(f"Зона {i} переименована в: {new_name}")
++                break
++
++    def set_zones(self, zones, zone_names=None):
++        """Установить зоны извне"""
++        self.zones = zones.copy()
++        if zone_names:
++            self.zone_names = zone_names.copy()
++        else:
++            self.zone_names = [f"Зона {i}" for i in range(len(zones))]
++            self.update()
++</file>
++
++<file path="input/video_thread.py">
++import time
++import cv2
++import torch
++from PyQt6.QtCore import QThread, pyqtSignal
++
++from core.alert_filter import AlertFilter
++from core.detection import MotionDetector
++from core.zone_manager import ZoneManager
++from core.scenario_analyzer import ScenarioAnalyzer
++from input.source_manager import SourceManager
++
++
++class VideoThread(QThread):
++    """
++    Поток видео для обработки
++    """
++    # Сигналы
++    all_frames_ready = pyqtSignal(list)  # список кадров для всех источников
++    log_signal = pyqtSignal(str)
++    alert_signal = pyqtSignal(int, object, int)
++
++    def __init__(self, source_manage: SourceManager):
++        """
++        Инициализация потока обработки
++        :param source_manage: менеджер источников
++        """
++        super().__init__()
++
++        self.running = False
++        self.source_manager = source_manage
++
++        # Настройки для каждой камеры
++        self.frame_counters = {}
++
++        self.detectors = {}
++        self.zone_managers = {}
++        self.alert_filters = {}
++        self.scenario_analyzers = {}
++
++        # Для мониторинга
++        self.debug_mode = False
++
++        # Настройки по умолчанию
++        self.model_name = "yolov8m.pt"
++        self.confidence = 0.45
++        self.watched_classes = {0, 1, 2, 3, 5, 7, 67}
++        self.draw_rectangles = True
++        self.min_presence_time = 2.0
++        self.alert_cooldown = 30.0
++        self.min_overlap_ratio = 0.1
++        self.max_wait_time = 300      # 5 минут
++        self.max_person_time = 600    # 10 минут
++
++        # Определяем устройство
++        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
++        print(f"VideoThread: Используется устройство: {self.device.upper()}")
++
++    def init_source(self, source_id: int):
++        """Инициализация источника для детекции"""
++        if source_id in self.zone_managers:
++            return
++
++        if source_id not in self.detectors:
++            self.detectors[source_id] = MotionDetector(
++                model_name=self.model_name,
++                confidence=self.confidence,
++                device=self.device,
++                watched_classes=self.watched_classes
++            )
++
++        self.zone_managers[source_id] = ZoneManager()
++
++        self.alert_filters[source_id] = AlertFilter(
++            min_presence_time=self.min_presence_time,
++            alert_cooldown=self.alert_cooldown,
++            min_ratio=self.min_overlap_ratio
++        )
++
++        self.scenario_analyzers[source_id] = ScenarioAnalyzer(
++            max_wait_time=self.max_wait_time,
++            max_person_time=self.max_person_time
++        )
++
++        print(f"VideoThread: Инициализация источника {source_id}")
++
++        self.frame_counters[source_id] = 0
++
++        print(f"VideoThread: Источник {source_id} инициализирован")
++
++    def update_zones(self, zones: list[tuple[int, int, int, int]], source_id: int):
++        """
++        Обновление зон
++        :param zones: список зон [(x, y, w, h), ...]
++        :param source_id: идентификатор источника
++        """
++        if source_id in self.zone_managers:
++            self.zone_managers[source_id].set_zones(zones)
++            self.alert_filters[source_id].reset()
++            self.log_signal.emit(f"[Камера {source_id}] Обновлены зоны")
++
++    def run(self):
++        """Основной цикл обработки видео"""
++        self.running = True
++        self.log_signal.emit("Поток видео запущен")
++        self.source_manager.connect_all()
++
++        while self.running:
++            start_time = time.time()
++            all_frames = []
++
++            # Проходим по ВСЕМ источникам
++            for source_id, source in self.source_manager.sources.items():
++                self.init_source(source_id)
++
++                frame = source.get_last_frame()
++
++                if frame is None:
++                    all_frames.append({
++                        'id': source_id,
++                        'frame': None,
++                        'objects': [],
++                        'active_zones': set(),
++                        'connected': False
++                    })
++                    continue
++
++                self.frame_counters[source_id] += 1
++
++                # Детекция объектов
++                objects, annotated_frame = self.detectors[source_id].detect(frame)
++
++                # Проверка зон
++                zone_manager = self.zone_managers[source_id]
++                min_overlap = self.min_overlap_ratio
++
++                for obj in objects:
++                    bbox = obj.get('bbox')
++                    if bbox:
++                        intersecting_zones = zone_manager.get_all_intersections(bbox, min_overlap)
++                        if intersecting_zones:
++                            obj['in_zone'] = True
++                            obj['zone_index'] = intersecting_zones[0]
++                        else:
++                            obj['in_zone'] = False
++                            obj['zone_index'] = None
++                    else:
++                        obj['in_zone'] = False
++                        obj['zone_index'] = None
++
++                # Тревоги по зонам
++                alert_filter = self.alert_filters[source_id]
++                alert_zones = alert_filter.process_frame(objects, zone_manager)
++
++                for zone_idx in alert_zones:
++                    zone_name = zone_manager.zone_names[zone_idx] if zone_idx < len(
++                        zone_manager.zone_names) else f"Зона {zone_idx}"
++                    print(f"Тревога в зоне {zone_name} | Время: {time.strftime('%H:%M:%S')}")
++                    self.alert_signal.emit(zone_idx, annotated_frame.copy(), source_id)
++
++                # Анализ сценария (машина -> человек -> отъезд)
++                current_time = time.time()
++                scenario_alerts = self.scenario_analyzers[source_id].update(objects, current_time)
++
++                for alert in scenario_alerts:
++                    print(f"Сценарий: {alert['message']}")
++                    self.alert_signal.emit(-1, annotated_frame.copy(), source_id)
++
++                # Активные зоны для подсветки
++                active_zones = set()
++                for obj in objects:
++                    if obj.get('in_zone') and obj.get('zone_index') is not None:
++                        active_zones.add(obj['zone_index'])
++
++                # Отрисовка зон на кадре
++                processed_frame = annotated_frame.copy()
++
++                if self.draw_rectangles:
++                    for i, (zx, zy, zw, zh) in enumerate(zone_manager.zones):
++                        if i in active_zones:
++                            color = (0, 0, 255)
++                            thickness = 3
++                        else:
++                            color = (0, 255, 0)
++                            thickness = 2
++
++                        cv2.rectangle(processed_frame, (zx, zy), (zx + zw, zy + zh), color, thickness)
++                        name = zone_manager.zone_names[i] if i < len(zone_manager.zone_names) else f"Зона {i}"
++                        cv2.putText(processed_frame, name, (zx + 5, zy + 20),
++                                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
++
++                all_frames.append({
++                    'id': source_id,
++                    'frame': processed_frame,
++                    'objects': objects,
++                    'active_zones': active_zones,
++                    'connected': True
++                })
++
++            self.all_frames_ready.emit(all_frames)
++
++            # Управление FPS (30 кадров в секунду)
++            frame_time = time.time() - start_time
++            target_frame_time = 1.0 / 30.0
++            if frame_time < target_frame_time:
++                time.sleep(target_frame_time - frame_time)
++
++        self.log_signal.emit("Поток видео остановлен")
++
++    def stop(self):
++        """
++        Остановка потока обработки видео
++        """
++        self.running = False
++        if self.source_manager:
++            self.source_manager.stop_all()
++        self.wait()
++
++    def get_zone_manager(self, source_id):
++        """У каждой камеры свой список отслеживаемых зон"""
++        if source_id in self.zone_managers:
++            return self.zone_managers[source_id]
++        return None
++
++    def get_scenario_analyzer(self, source_id):
++        if source_id in self.scenario_analyzers:
++            return self.scenario_analyzers[source_id]
++        return None
++</file>
++
++<file path="ui/main_window.py">
++import os
++import time
++from datetime import datetime
++
++from PyQt6.QtCore import Qt
++from PyQt6.QtWidgets import (
++    QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
++    QPushButton, QTextEdit, QLabel, QFileDialog,
++    QGroupBox, QScrollArea, QCheckBox, QComboBox,
++    QInputDialog, QMessageBox
++)
++
++from core.zone_manager import ZoneManager
++from input.source_manager import SourceManager
++from input.video_thread import VideoThread
++from ui.image_stitching import ImageStitcher
++from ui.video_widget import VideoWidget
++from output.telegram_notifier import TelegramNotifier
++
++
++class MainWindow(QMainWindow):
++    """
++    Главное окно программы
++    """
++
++    def __init__(self, video_thread: VideoThread, source_manager: SourceManager):
++        super().__init__()
++        # Управление
++        self.video_thread = video_thread
++        self.source_manager = source_manager
++        self.telegram = TelegramNotifier()
++
++        self.image_stitcher = None
++        self.single_video_widget = None
++        self.load_zones_btn = None
++        self.save_zones_btn = None
++        self.clear_zones_btn = None
++        self.zones_count_label = None
++        self.log_widget = None
++        self.clear_log_btn = None
++        self.source_combo = None
++        self.add_camera_btn = None
++        self.remove_btn = None
++        self.refresh_btn = None
++        self.single_mode_btn = None
++        self.multi_mode_btn = None
++
++        self.current_mode = "single"  # "single" или "multi"
++        self.current_source_id = None
++
++        self.setWindowTitle("Система мониторинга")
++        self.setGeometry(100, 100, 1600, 800)
++
++        self._apply_stylesheet()
++        self._setup_ui()
++        self._connect_signals()
++        self._refresh_source_list()
++
++        # Подключаем сигнал тревог и кадров
++        self.video_thread.alert_signal.connect(self.on_zone_alert)
++        self.video_thread.all_frames_ready.connect(self._on_all_frames_ready)
++
++        # Запускаем поток видео
++        self.video_thread.start()
++        self._add_log("Система мониторинга запущена")
++
++    def _apply_stylesheet(self):
++        """Применение стилей к окну (светлая тема)"""
++        self.setStyleSheet("""
++            QMainWindow { background-color: #f0f0f0; }
++
++            QPushButton {
++                padding: 4px 8px;
++                font-size: 11px;
++                border-radius: 4px;
++                border: 1px solid #cccccc;
++                background-color: #ffffff;
++                color: #333333;
++                min-width: 60px;
++            }
++            QPushButton:hover { 
++                background-color: #e6e6e6; 
++                border-color: #aaaaaa;
++            }
++            QPushButton:disabled { 
++                background-color: #f5f5f5; 
++                color: #999999;
++                border-color: #dddddd;
++            }
++
++            QTextEdit {
++                background-color: #ffffff;
++                color: #333333;
++                border: 1px solid #cccccc;
++                border-radius: 4px;
++                font-family: monospace;
++                font-size: 11px;
++            }
++
++            QGroupBox {
++                color: #333333;
++                border: 1px solid #cccccc;
++                border-radius: 4px;
++                margin-top: 8px;
++                padding-top: 12px;
++                font-weight: bold;
++                background-color: #fafafa;
++            }
++            QGroupBox::title {
++                subcontrol-origin: margin;
++                left: 10px;
++                padding: 0 5px;
++                background-color: #f0f0f0;
++            }
++
++            QLabel { 
++                color: #333333; 
++            }
++
++            QCheckBox { 
++                color: #333333; 
++                spacing: 8px;
++            }
++
++            QCheckBox::indicator {
++                width: 16px;
++                height: 16px;
++                background-color: #ffffff;
++                border: 1px solid #cccccc;
++                border-radius: 3px;
++            }
++
++            QCheckBox::indicator:checked {
++                background-color: #4caf50;
++                border-color: #4caf50;
++            }
++
++            QScrollArea {
++                border: none;
++                background-color: transparent;
++            }
++
++            QScrollBar:vertical {
++                background-color: #f0f0f0;
++                width: 10px;
++                border-radius: 5px;
++            }
++            QScrollBar::handle:vertical {
++                background-color: #c0c0c0;
++                border-radius: 5px;
++                min-height: 30px;
++            }
++            QScrollBar::handle:vertical:hover {
++                background-color: #a0a0a0;
++            }
++
++            QComboBox {
++                background-color: #ffffff;
++                color: #333333;
++                border: 1px solid #cccccc;
++                border-radius: 3px;
++                padding: 3px;
++                min-width: 120px;
++            }
++        """)
++
++    def _setup_ui(self):
++        """Создание пользовательского интерфейса"""
++        central = QWidget()
++        self.setCentralWidget(central)
++        outer_layout = QVBoxLayout()
++        outer_layout.setSpacing(5)
++        central.setLayout(outer_layout)
++
++        top_layout = QHBoxLayout()
++        top_layout.setSpacing(8)
++
++        # Контейнер для видео (будет меняться)
++        self.video_container = QWidget()
++        self.video_container_layout = QHBoxLayout()
++        self.video_container_layout.setContentsMargins(0, 0, 0, 0)
++        self.video_container.setLayout(self.video_container_layout)
++
++        # Виджеты для видео
++        self.single_video_widget = VideoWidget()
++        self.image_stitcher = ImageStitcher()
++
++        # По умолчанию показываем одиночный виджет
++        self.video_container_layout.addWidget(self.single_video_widget)
++        self.image_stitcher.hide()
++
++        top_layout.addWidget(self.video_container)
++
++        # Правая панель с прокруткой
++        scroll_area = QScrollArea()
++        scroll_area.setWidgetResizable(True)
++        scroll_area.setMinimumWidth(320)
++        scroll_area.setMaximumWidth(360)
++
++        panel_content = QWidget()
++        panel_layout = QVBoxLayout()
++        panel_layout.setSpacing(6)
++        panel_layout.setContentsMargins(5, 5, 5, 5)
++
++        # Группа: Режим просмотра
++        mode_group = QGroupBox("Режим просмотра")
++        mode_layout = QHBoxLayout()
++
++        self.single_mode_btn = QPushButton("Одна камера")
++        self.multi_mode_btn = QPushButton("Все камеры")
++        self.single_mode_btn.setCheckable(True)
++        self.multi_mode_btn.setCheckable(True)
++        self.single_mode_btn.setChecked(True)
++
++        mode_layout.addWidget(self.single_mode_btn)
++        mode_layout.addWidget(self.multi_mode_btn)
++        mode_group.setLayout(mode_layout)
++        panel_layout.addWidget(mode_group)
++
++        # Группа: Выбор камеры
++        control_group = QGroupBox("Выбор камеры")
++        control_layout = QVBoxLayout()
++
++        select_layout = QHBoxLayout()
++        self.source_combo = QComboBox()
++        self.source_combo.setMinimumWidth(140)
++        self.source_combo.setMaximumWidth(160)
++        self.refresh_btn = QPushButton("Обновить")
++        select_layout.addWidget(self.source_combo)
++        select_layout.addWidget(self.refresh_btn)
++        control_layout.addLayout(select_layout)
++
++        edit_layout = QHBoxLayout()
++        self.add_camera_btn = QPushButton("Добавить")
++        self.remove_btn = QPushButton("Удалить")
++        edit_layout.addWidget(self.add_camera_btn)
++        edit_layout.addWidget(self.remove_btn)
++        control_layout.addLayout(edit_layout)
++
++        control_group.setLayout(control_layout)
++        panel_layout.addWidget(control_group)
++
++        # Чекбокс отрисовки рамок
++        self.draw_rectangles_checkbox = QCheckBox("Отрисовка рамок")
++        self.draw_rectangles_checkbox.setChecked(True)
++        panel_layout.addWidget(self.draw_rectangles_checkbox)
++
++        # Группа: Зоны
++        zones_group = QGroupBox("Зоны контроля")
++        zones_layout = QVBoxLayout()
++
++        zones_btn_layout = QHBoxLayout()
++        self.load_zones_btn = QPushButton("Загрузить")
++        self.save_zones_btn = QPushButton("Сохранить")
++        self.clear_zones_btn = QPushButton("Очистить")
++
++        zones_btn_layout.addWidget(self.load_zones_btn)
++        zones_btn_layout.addWidget(self.save_zones_btn)
++        zones_btn_layout.addWidget(self.clear_zones_btn)
++
++        self.zones_count_label = QLabel("Зон: 0")
++
++        zones_layout.addLayout(zones_btn_layout)
++        zones_layout.addWidget(self.zones_count_label)
++        zones_group.setLayout(zones_layout)
++        panel_layout.addWidget(zones_group)
++
++        # Группа: Журнал
++        log_group = QGroupBox("Журнал событий")
++        log_layout = QVBoxLayout()
++
++        self.log_widget = QTextEdit()
++        self.log_widget.setReadOnly(True)
++        self.log_widget.setMaximumHeight(250)
++
++        self.clear_log_btn = QPushButton("Очистить")
++        log_layout.addWidget(self.log_widget)
++        log_layout.addWidget(self.clear_log_btn)
++        log_group.setLayout(log_layout)
++        panel_layout.addWidget(log_group)
++
++        panel_layout.addStretch()
++        panel_content.setLayout(panel_layout)
++        scroll_area.setWidget(panel_content)
++        top_layout.addWidget(scroll_area)
++
++        outer_layout.addLayout(top_layout)
++
++    def _connect_signals(self):
++        """Подключение сигналов"""
++        # Кнопки режима просмотра
++        if self.single_mode_btn:
++            self.single_mode_btn.clicked.connect(self._set_single_mode)
++        if self.multi_mode_btn:
++            self.multi_mode_btn.clicked.connect(self._set_multi_mode)
++
++        # Кнопки
++        if self.load_zones_btn:
++            self.load_zones_btn.clicked.connect(self._load_zones)
++        if self.save_zones_btn:
++            self.save_zones_btn.clicked.connect(self._save_zones)
++        if self.clear_zones_btn:
++            self.clear_zones_btn.clicked.connect(self._clear_zones)
++        if self.clear_log_btn:
++            self.clear_log_btn.clicked.connect(self._clear_log)
++        if self.add_camera_btn:
++            self.add_camera_btn.clicked.connect(self._add_network_camera)
++        if self.remove_btn:
++            self.remove_btn.clicked.connect(self.remove_current_camera)
++
++        if self.draw_rectangles_checkbox:
++            self.draw_rectangles_checkbox.stateChanged.connect(self._toggle_draw_rectangles)
++
++        # Сигналы от VideoThread
++        if self.video_thread:
++            self.video_thread.log_signal.connect(self._add_log)
++
++        # Сигнал при выборе источника
++        if self.source_combo:
++            self.source_combo.currentIndexChanged.connect(self._on_source_changed)
++        if self.refresh_btn:
++            self.refresh_btn.clicked.connect(self._refresh_source_list)
++
++        # Сигнал добавления зоны от одиночного виджета
++        if self.single_video_widget:
++            self.single_video_widget.zone_added.connect(self._on_zones_updated)
++
++    def _set_single_mode(self):
++        """Переключение в режим одной камеры"""
++        self.current_mode = "single"
++        self.single_mode_btn.setChecked(True)
++        self.multi_mode_btn.setChecked(False)
++
++        # Виджет с потоком с одной камеры
++        self.single_video_widget.show()
++        self.image_stitcher.hide()
++
++        # Обновление зон для выбранной камеры
++        if self.current_source_id:
++            self._load_zones_for_source(self.current_source_id)
++
++        self._add_log("Режим: одна камера")
++
++    def _set_multi_mode(self):
++        """Переключение в режим всех камер"""
++        self.current_mode = "multi"
++        self.single_mode_btn.setChecked(False)
++        self.multi_mode_btn.setChecked(True)
++
++        # Сетка
++        self.single_video_widget.hide()
++        self.image_stitcher.show()
++
++        self._add_log("Режим: все камеры")
++
++    def _refresh_source_list(self):
++        self.source_combo.clear()
++        sources = self.source_manager.get_sources_list()
++        for src in sources:
++            self.source_combo.addItem(src['name'], src['id'])
++
++        if sources:
++            self.source_combo.setCurrentIndex(0)
++            self._on_source_changed(0)
++            self._add_log(f"Доступно источников: {len(sources)}")
++        else:
++            self._add_log("Нет доступных источников")
++
++    def _on_source_changed(self, index):
++        """Смена источника (только для режима одной камеры)"""
++        source_id = self.source_combo.itemData(index)
++        if not source_id:
++            return
++
++        self.current_source_id = source_id
++        self.source_manager.set_active_source(source_id)
++        self._add_log(f"Выбрана камера {source_id}")
++
++        # Загружаем зоны для выбранной камеры
++        self._load_zones_for_source(source_id)
++
++    def _load_zones_for_source(self, source_id):
++        """Загрузка зон для конкретной камеры"""
++        zone_manager = self.video_thread.get_zone_manager(source_id)
++        if zone_manager:
++            zones_file = self.source_manager.get_zones_file(source_id)
++            if zones_file and zone_manager.load_from_file(zones_file):
++                self.single_video_widget.set_zones(zone_manager.zones, zone_manager.zone_names)
++                self.video_thread.update_zones(zone_manager.zones, source_id)
++                self._add_log(f"Загружено зон: {len(zone_manager.zones)}")
++            else:
++                self.single_video_widget.zones.clear()
++                self.single_video_widget.zone_names.clear()
++                self.single_video_widget.update()
++                self.video_thread.update_zones([], source_id)
++                self._add_log("Нет сохранённых зон для этой камеры")
++
++        self._update_zones_count()
++
++    def _add_network_camera(self):
++        """Добавление источника"""
++        name, ok = QInputDialog.getText(
++            self,
++            "Добавить камеру",
++            "Введите название камеры: "
++        )
++        if not ok or not name:
++            return
++
++        path, ok = QInputDialog.getText(
++            self,
++            "Путь к источнику",
++            "Введите RTSP адрес или путь к видеофайлу:\n"
++            "Пример: rtsp://192.168.1.100:554/stream1\n"
++            "Или: videos/test.mp4"
++        )
++
++        if not ok or not path:
++            return
++
++        new_id = self.source_manager.add_ip_source(name, path)
++
++        zones_file = f"config/zones_cam_{new_id}.json"
++        zone_manager = ZoneManager(camera_id=new_id)
++        zone_manager.save_to_file(zones_file)
++
++        if self.source_manager.connect_source(new_id):
++            self._add_log(f"Добавлена камера: {name}")
++            self._add_log(f"   Адрес: {path[:50]}...")
++        else:
++            self._add_log(f"Камера добавлена, но соединение не установлено: {name}")
++            self._add_log(f"   Проверьте адрес: {path}")
++
++        self._refresh_source_list()
++
++    def remove_current_camera(self):
++        """Удаление текущей камеры"""
++        source_id = self.source_combo.currentData()
++        if not source_id:
++            self._add_log("Нет выбранной камеры")
++            return
++
++        camera_name = self.source_combo.currentText()
++
++        reply = QMessageBox.question(
++            self,
++            "Подтверждение",
++            f"Удалить камеру '{camera_name}'?",
++            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
++        )
++
++        if reply == QMessageBox.StandardButton.Yes:
++            zones_file = self.source_manager.get_zones_file(source_id)
++            if zones_file and os.path.exists(zones_file):
++                os.remove(zones_file)
++                self._add_log(f"Удалён файл зон камеры")
++
++            self.source_manager.remove_source(source_id)
++            self._refresh_source_list()
++            self._add_log(f"Удалена камера: {camera_name}")
++
++            if self.source_combo.count() == 0:
++                self.source_manager.active_source_id = None
++                self.single_video_widget.zones.clear()
++                self.single_video_widget.zone_names.clear()
++                self.single_video_widget.update()
++
++    def _on_all_frames_ready(self, all_frames):
++        """Приём кадров от всех источников"""
++        if self.current_mode == "multi":
++            # Собираем список активных источников
++            sources_list = []
++            for f in all_frames:
++                if f['frame'] is not None:
++                    sources_list.append({'id': f['id']})
++
++            if sources_list:
++                self.image_stitcher.set_sources(sources_list)
++
++            for frame_data in all_frames:
++                if frame_data['frame'] is not None:
++                    self.image_stitcher.update_frame(
++                        frame_data['id'],
++                        frame_data['frame'],
++                        frame_data['active_zones'],
++                        frame_data['objects']
++                    )
++        elif self.current_mode == "single" and self.current_source_id:
++            # Показываем только выбранную камеру
++            for frame_data in all_frames:
++                if frame_data['id'] == self.current_source_id and frame_data['frame'] is not None:
++                    self.single_video_widget.set_frame(
++                        frame_data['frame'],
++                        frame_data['active_zones'],
++                        frame_data['objects']
++                    )
++                    break
++
++    def _load_zones(self):
++        """Загрузка зон из файла для текущей камеры"""
++        if self.current_mode != "single":
++            self._add_log("Переключитесь в режим 'Одна камера' для работы с зонами")
++            return
++
++        source_id = self.current_source_id
++        if not source_id:
++            self._add_log("Сначала выберите камеру")
++            return
++
++        filepath, _ = QFileDialog.getOpenFileName(
++            self, "Выберите файл зон", f"zones_cam_{source_id}.json", "JSON Files (*.json)"
++        )
++        if not filepath:
++            return
++
++        zone_manager = self.video_thread.get_zone_manager(source_id)
++        if not zone_manager:
++            self._add_log("Ошибка: менеджер зон не найден")
++            return
++
++        if zone_manager.load_from_file(filepath):
++            self.single_video_widget.set_zones(zone_manager.zones, zone_manager.zone_names)
++            self.video_thread.update_zones(zone_manager.zones, source_id)
++            self._update_zones_count()
++            self._add_log(f"Загружены зоны из {filepath}")
++        else:
++            self._add_log(f"Ошибка загрузки зон из {filepath}")
++
++    def _save_zones(self):
++        """Сохранение зон в файл"""
++        if self.current_mode != "single":
++            self._add_log("Переключитесь в режим 'Одна камера' для работы с зонами")
++            return
++
++        source_id = self.current_source_id
++        if not source_id:
++            self._add_log("Сначала выберите камеру")
++            return
++
++        zones = self.single_video_widget.zones
++        zone_names = self.single_video_widget.zone_names
++
++        if not zones:
++            self._add_log("Нет зон для сохранения")
++            return
++
++        zone_manager = self.video_thread.get_zone_manager(source_id)
++        if not zone_manager:
++            self._add_log("Ошибка: менеджер зон не найден")
++            return
++
++        zone_manager.set_zones(zones, zone_names)
++        zone_manager.camera_id = source_id
++
++        zones_file = self.source_manager.get_zones_file(source_id)
++        if zone_manager.save_to_file(zones_file):
++            self._add_log(f"Зоны сохранены (камера {source_id})")
++        else:
++            self._add_log(f"Ошибка сохранения зон")
++
++    def _clear_zones(self):
++        """Очистка зон для выбранной камеры"""
++        if self.current_mode != "single":
++            self._add_log("Переключитесь в режим 'Одна камера' для работы с зонами")
++            return
++
++        source_id = self.current_source_id
++        if not source_id:
++            self._add_log("Сначала выберите камеру")
++            return
++
++        self.single_video_widget.zones.clear()
++        self.single_video_widget.zone_names.clear()
++        self.single_video_widget.update()
++
++        zone_manager = self.video_thread.get_zone_manager(source_id)
++        if zone_manager:
++            zone_manager.clear_zones()
++
++        self.video_thread.update_zones([], source_id)
++        self._update_zones_count()
++        self._add_log("Зоны очищены")
++
++    def _on_zones_updated(self, zones):
++        if self.current_mode != "single":
++            return
++
++        source_id = self.current_source_id
++        if source_id:
++            self.video_thread.update_zones(zones, source_id)
++            self._update_zones_count()
++
++    def _clear_log(self):
++        self.log_widget.clear()
++
++    def _update_zones_count(self):
++        """Обновляем счётчик зон"""
++        count = len(self.single_video_widget.zones)
++        self.zones_count_label.setText(f"Зон: {count}")
++
++    def _add_log(self, text):
++        if hasattr(self, '_last_log_time') and time.time() - self._last_log_time < 0.05:
++            return
++        self._last_log_time = time.time()
++
++        timestamp = datetime.now().strftime("%H:%M:%S")
++        self.log_widget.append(f"[{timestamp}] {text}")
++        scrollbar = self.log_widget.verticalScrollBar()
++        if scrollbar:
++            scrollbar.setValue(scrollbar.maximum())
++
++    def _toggle_draw_rectangles(self, state):
++        draw = state == 2  # Qt.Checked
++        self.video_thread.draw_rectangles = draw
++        self.single_video_widget.draw_rectangles = draw
++        for widget in self.image_stitcher.video_widgets.values():
++            widget.draw_rectangles = draw
++        self._add_log(f"Отрисовка рамок: {'включена' if draw else 'выключена'}")
++
++    def on_zone_alert(self, zone_index, frame, source_id):
++        """Обработчик тревоги в зоне наблюдения"""
++        zone_name = None
++        if source_id == self.current_source_id:
++            if 0 <= zone_index < len(self.single_video_widget.zone_names):
++                zone_name = self.single_video_widget.zone_names[zone_index]
++        else:
++            # Для режима всех камер
++            if source_id in self.image_stitcher.video_widgets:
++                widget = self.image_stitcher.video_widgets[source_id]
++                if 0 <= zone_index < len(widget.zone_names):
++                    zone_name = widget.zone_names[zone_index]
++
++        source = self.source_manager.get_source(source_id)
++        if source and zone_name:
++            full_name = f"{source.name} - {zone_name}"
++        elif source:
++            full_name = f"{source.name} - зона {zone_index}"
++        else:
++            full_name = f"Камера {source_id} - зона {zone_index}"
++
++        self.telegram.send_alert(zone_index, full_name, frame)
++
++    def closeEvent(self, event):
++        source_id = self.current_source_id
++        if source_id:
++            zones = self.single_video_widget.zones
++            if zones:
++                zone_manager = self.video_thread.get_zone_manager(source_id)
++                if zone_manager:
++                    zone_manager.set_zones(zones, self.single_video_widget.zone_names)
++                    zones_file = self.source_manager.get_zones_file(source_id)
++                    zone_manager.save_to_file(zones_file)
++                    self._add_log("Зоны сохранены")
++
++        self.video_thread.stop()
++        event.accept()
++</file>
++
++</files>

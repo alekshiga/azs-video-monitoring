@@ -1,64 +1,48 @@
 import time
-
 import cv2
 import torch
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core.alert_filter import AlertFilter
 from core.detection import MotionDetector
 from core.zone_manager import ZoneManager
+from core.alert_filter import AlertFilter
+from core.scenario_analyzer import ScenarioAnalyzer
 from input.source_manager import SourceManager
 
 
 class VideoThread(QThread):
-    """
-    Поток видео для обработки
-    """
-    # Сигналы
-    frame_ready = pyqtSignal(object, object, object, int)  # frame, active_zones, objects, source_id
+    all_frames_ready = pyqtSignal(list)
     log_signal = pyqtSignal(str)
-    source_status_signal = pyqtSignal(int, bool)  # source_id, connected
     alert_signal = pyqtSignal(int, object, int)
 
-    def __init__(self, source_manage: SourceManager):
-        """
-        Инициализация потока обработки
-        :param source_manage: менеджер источников
-        """
+    def __init__(self, source_manager: SourceManager):
         super().__init__()
-
         self.running = False
-        self.source_manager = source_manage
+        self.source_manager = source_manager
 
-        # Настройки для каждой камеры
-        self.zones = {}
         self.frame_counters = {}
-
         self.detectors = {}
         self.zone_managers = {}
         self.alert_filters = {}
+        self.scenario_analyzers = {}
 
-        # Для мониторинга
-        self.last_log_time = time.time()
-        self.debug_mode = False
-
-        # Настройки по умолчанию
         self.model_name = "yolov8m.pt"
         self.confidence = 0.45
-        self.watched_classes = {0, 1, 2, 3, 5, 7, 67}
+        self.watched_classes = {0, 2, 5, 7}
         self.draw_rectangles = True
         self.min_presence_time = 2.0
         self.alert_cooldown = 30.0
         self.min_overlap_ratio = 0.1
 
-        # Определяем устройство
+        # Настройки сценариев
+        self.person_without_car_delay = 60.0
+        self.max_person_time = 600.0
+
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        print(f"VideoThread: Используется устройство: {self.device.upper()}")
+        print(f"VideoThread: {self.device.upper()}")
 
-
-    def init_source(self, source_id: int):
-        """Инициализация источника для детекции"""
-        if source_id in self.zones:
+    def init_source(self, source_id):
+        if source_id in self.zone_managers:
             return
 
         if source_id not in self.detectors:
@@ -70,129 +54,95 @@ class VideoThread(QThread):
             )
 
         self.zone_managers[source_id] = ZoneManager()
-
         self.alert_filters[source_id] = AlertFilter(
             min_presence_time=self.min_presence_time,
             alert_cooldown=self.alert_cooldown,
             min_ratio=self.min_overlap_ratio
         )
 
-        print(f"VideoThread: Инициализация источника {source_id}")
+        self.scenario_analyzers[source_id] = ScenarioAnalyzer(
+            person_without_car_delay=self.person_without_car_delay,
+            max_person_time=self.max_person_time
+        )
 
-        self.zones[source_id] = []
         self.frame_counters[source_id] = 0
 
-        print(f"VideoThread: Источник {source_id} инициализирован")
-
-    def update_zones(self, zones: list[tuple[int, int, int, int]], source_id: int):
-        """
-        Обновление зон
-        :param zones: список зон [(x, y, w, h), ...]
-        :param source_id: идентификатор источника
-        """
+    def update_zones(self, zones, source_id):
         if source_id in self.zone_managers:
             self.zone_managers[source_id].set_zones(zones)
             self.alert_filters[source_id].reset()
 
-            self.log_signal.emit(f"[Камера {source_id}] Обновлены зоны")
+    def remove_source(self, source_id):
+        self.detectors.pop(source_id, None)
+        self.zone_managers.pop(source_id, None)
+        self.alert_filters.pop(source_id, None)
+        self.scenario_analyzers.pop(source_id, None)
+        self.frame_counters.pop(source_id, None)
 
     def run(self):
-        """Основной цикл обработки видео"""
         self.running = True
         self.log_signal.emit("Поток видео запущен")
         self.source_manager.connect_all()
 
         while self.running:
             start_time = time.time()
+            all_frames = []
 
-            active_source = self.source_manager.get_active_source()
+            for source_id, source in list(self.source_manager.sources.items()):
+                self.init_source(source_id)
+                frame = source.get_last_frame()
 
-            if active_source is None:
-                time.sleep(0.1)
-                continue
+                if frame is None:
+                    all_frames.append({'id': source_id, 'frame': None, 'objects': [], 'active_zones': set()})
+                    continue
 
-            source_id = active_source.source_id
-            self.init_source(source_id)
+                self.frame_counters[source_id] += 1
 
-            frame = active_source.get_last_frame()
+                objects, annotated_frame = self.detectors[source_id].detect(
+                    frame, self.zone_managers[source_id].zones
+                )
 
-            if frame is None:
-                self.source_status_signal.emit(source_id, False)
-                time.sleep(0.1)
-                continue
-
-            self.source_status_signal.emit(source_id, True)
-            self.frame_counters[source_id] += 1
-
-            objects, annotated_frame = self.detectors[source_id].detect(frame)
-
-            zone_manager = self.zone_managers[source_id]
-            min_overlap = self.min_overlap_ratio
-
-            for obj in objects:
-                bbox = obj.get('bbox')
-                if bbox:
-                    # Находим все зоны, с которыми пересекается объект
-                    intersecting_zones = zone_manager.get_all_intersections(bbox, min_overlap)
-                    if intersecting_zones:
-                        obj['in_zone'] = True
-                        obj['zone_index'] = intersecting_zones[0]  # первая зона
+                zone_manager = self.zone_managers[source_id]
+                for obj in objects:
+                    bbox = obj.get('bbox')
+                    if bbox:
+                        zones = zone_manager.get_all_intersections(bbox, self.min_overlap_ratio)
+                        obj['in_zone'] = len(zones) > 0
+                        obj['zone_index'] = zones[0] if zones else None
                     else:
                         obj['in_zone'] = False
                         obj['zone_index'] = None
-                else:
-                    obj['in_zone'] = False
-                    obj['zone_index'] = None
 
-            alert_filter = self.alert_filters[source_id]
-            alert_zones = alert_filter.process_frame(objects, zone_manager)
+                alert_zones = self.alert_filters[source_id].process_frame(objects, zone_manager)
+                for zone_idx in alert_zones:
+                    zone_name = zone_manager.zone_names[zone_idx] if zone_idx < len(zone_manager.zone_names) else f"Зона {zone_idx}"
+                    self.alert_signal.emit(zone_idx, annotated_frame.copy(), source_id)
 
-            # Обработка тревог
-            for zone_idx in alert_zones:
-                zone_name = zone_manager.zone_names[zone_idx] if zone_idx < len(
-                    zone_manager.zone_names) else f"Зона {zone_idx}"
-                print(f"Тревога в зоне {zone_name} | Время: {time.strftime('%H:%M:%S')}")
+                current_time = time.time()
+                scenario_alerts = self.scenario_analyzers[source_id].update(objects, current_time)
+                for alert in scenario_alerts:
+                    self.alert_signal.emit(-1, annotated_frame.copy(), source_id)
 
-            active_zones = set()
-            for obj in objects:
-                if obj.get('in_zone') and obj.get('zone_index') is not None:
-                    active_zones.add(obj['zone_index'])
+                active_zones = {obj['zone_index'] for obj in objects if obj.get('in_zone') and obj.get('zone_index') is not None}
 
-            processed_frame = annotated_frame.copy()
+                all_frames.append({
+                    'id': source_id,
+                    'frame': annotated_frame,
+                    'objects': objects,
+                    'active_zones': active_zones
+                })
 
-            if self.draw_rectangles:
-                for i, (zx, zy, zw, zh) in enumerate(self.zones.get(source_id, [])):
-                    if i in active_zones:
-                        color = (0, 0, 255)
-                        thickness = 3
-                    else:
-                        color = (0, 255, 0)
-                        thickness = 2
-
-                    cv2.rectangle(processed_frame, (zx, zy), (zx + zw, zy + zh), color, thickness)
-                    cv2.putText(processed_frame, f"Zone {i}", (zx + 5, zy + 20),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-
-            self.frame_ready.emit(processed_frame.copy(), active_zones, objects, source_id)
+            self.all_frames_ready.emit(all_frames)
 
             frame_time = time.time() - start_time
-            target_frame_time = 1.0 / 60.0
-            if frame_time < target_frame_time:
-                time.sleep(target_frame_time - frame_time)
-
-        self.log_signal.emit("Поток видео остановлен")
+            if frame_time < 1.0 / 30.0:
+                time.sleep(1.0 / 30.0 - frame_time)
 
     def stop(self):
-        """
-        Остановка потока обработки видео
-        """
         self.running = False
         if self.source_manager:
             self.source_manager.stop_all()
         self.wait()
 
     def get_zone_manager(self, source_id):
-        """У каждой камеры свой список отслеживаемых зон"""
-        if source_id in self.zone_managers:
-            return self.zone_managers[source_id]
-        return None
+        return self.zone_managers.get(source_id)

@@ -291,12 +291,17 @@ class MainWindow(QMainWindow):
         if zm:
             f = self.source_manager.get_zones_file(source_id)
             if f and zm.load_from_file(f):
-                self.single_video_widget.set_zones(zm.zones, zm.zone_names)
+                self.single_video_widget.set_zones(
+                    zm.zones,
+                    zm.zone_names,
+                    zm.zone_rules
+                )
                 self.video_thread.update_zones(zm.zones, source_id)
-                self._add_log(f"Загружено зон: {len(zm.zones)}")
+                self._add_log(f"Загружено зон: {len(zm.zones)}, правил: {sum(len(r) for r in zm.zone_rules.values())}")
             else:
                 self.single_video_widget.zones.clear()
                 self.single_video_widget.zone_names.clear()
+                self.single_video_widget.zone_rules.clear()
                 self.video_thread.update_zones([], source_id)
         self._update_zones_count()
 
@@ -367,17 +372,21 @@ class MainWindow(QMainWindow):
 
     def _save_zones(self):
         if self.current_mode != "single":
-            self._add_log("Переключитесь в режим 'Одна камера'")
+            self._add_log("Переключитесь в режим одной камеры")
             return
         sid = self.current_source_id
         if not sid or not self.single_video_widget.zones:
             return
         zm = self.video_thread.get_zone_manager(sid)
         if zm:
-            zm.set_zones(self.single_video_widget.zones, self.single_video_widget.zone_names)
+            zm.set_zones(
+                self.single_video_widget.zones,
+                self.single_video_widget.zone_names,
+                self.single_video_widget.zone_rules
+            )
             zm.camera_id = sid
             zm.save_to_file(self.source_manager.get_zones_file(sid))
-            self._add_log("Зоны сохранены")
+            self._add_log("Зоны и правила сохранены")
 
     def _clear_zones(self):
         if self.current_mode != "single":
@@ -433,12 +442,6 @@ class MainWindow(QMainWindow):
         if not zone_manager:
             self._add_log("Ошибка: менеджер зон не найден")
             return
-
-        existing_rules = zone_manager.get_rules_for_zone(zone_index)
-
-        if existing_rules:
-            rules_text = ", ".join([f"{r.class_name} ({r.min_time}с)" for r in existing_rules])
-            self._add_log(f"Зона {zone_index}: существующие правила: {rules_text}")
 
         dialog = RuleDialog(self)
 

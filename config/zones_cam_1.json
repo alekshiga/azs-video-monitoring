@@ -1,0 +1,21 @@
+{
+  "camera_id": null,
+  "zones": [
+    {
+      "name": "Зона 0",
+      "x": 459,
+      "y": 17,
+      "w": 455,
+      "h": 239,
+      "rules": [
+        {
+          "type": "conditional",
+          "condition": "has_none",
+          "duration": 1,
+          "cooldown": 60,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

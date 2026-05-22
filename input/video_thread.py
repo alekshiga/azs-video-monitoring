@@ -1,12 +1,12 @@
 import time
-import cv2
+
 import torch
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core.detection import MotionDetector
-from core.zone_manager import ZoneManager
 from core.alert_filter import AlertFilter
+from core.detection import MotionDetector
 from core.scenario_analyzer import ScenarioAnalyzer
+from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
 
 
@@ -37,6 +37,8 @@ class VideoThread(QThread):
         # Настройки сценариев
         self.person_without_car_delay = 60.0
         self.max_person_time = 600.0
+        self.track_zone_time = {}
+        self.rule_last_alert = {}
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(f"VideoThread: {self.device.upper()}")
@@ -70,7 +72,8 @@ class VideoThread(QThread):
     def update_zones(self, zones, source_id):
         if source_id in self.zone_managers:
             self.zone_managers[source_id].set_zones(zones)
-            self.alert_filters[source_id].reset()
+            self.track_zone_time.clear()
+            self.rule_last_alert.clear()
 
     def remove_source(self, source_id):
         self.detectors.pop(source_id, None)
@@ -113,20 +116,81 @@ class VideoThread(QThread):
                         obj['in_zone'] = False
                         obj['zone_index'] = None
 
-                alert_zones = self.alert_filters[source_id].process_frame(objects, zone_manager)
-                for alert in alert_zones:
-                    zone_idx = alert['zone_idx']
-                    time_in_zone = alert['time_in_zone']
-                    zone_name = zone_manager.zone_names[zone_idx] if zone_idx < len(
-                        zone_manager.zone_names) else f"Zone_{zone_idx}"
-                    self.alert_signal.emit(zone_idx, annotated_frame.copy(), source_id, zone_name, time_in_zone)
-
                 current_time = time.time()
-                scenario_alerts = self.scenario_analyzers[source_id].update(objects, current_time)
-                for alert in scenario_alerts:
-                    self.alert_signal.emit(-1, annotated_frame.copy(), source_id, alert.get('message', 'scenario'), 0)
+                zone_rules = zone_manager.zone_rules
 
-                active_zones = {obj['zone_index'] for obj in objects if obj.get('in_zone') and obj.get('zone_index') is not None}
+                for obj in objects:
+                    track_id = obj.get('track_id')
+                    zone_index = obj.get('zone_index')
+
+                    if track_id is None or zone_index is None:
+                        continue
+
+                    rules = zone_rules.get(zone_index, [])
+                    if not rules:
+                        continue
+
+                    key = (track_id, zone_index)
+
+                    if obj.get('in_zone'):
+                        if key not in self.track_zone_time:
+                            self.track_zone_time[key] = current_time
+
+                        time_in_zone = current_time - self.track_zone_time[key]
+
+                        for rule in rules:
+                            if not rule.enabled:
+                                continue
+
+                            if hasattr(rule, 'condition'):
+                                has_car = any(
+                                    o.get('class_name') == 'car' and o.get('zone_index') == zone_index for o in objects)
+                                has_person = any(
+                                    o.get('class_name') == 'person' and o.get('zone_index') == zone_index for o in
+                                    objects)
+
+                                if rule.check(has_car, has_person, time_in_zone):
+                                    alert_key = (zone_index, rule.condition)
+                                    last_alert = self.rule_last_alert.get(alert_key, 0)
+                                    if current_time - last_alert < rule.cooldown:
+                                        continue
+
+                                    self.rule_last_alert[alert_key] = current_time
+                                    zone_name = zone_manager.zone_names[zone_index] if zone_index < len(
+                                        zone_manager.zone_names) else f"Zone_{zone_index}"
+
+                                    messages = {
+                                        "has_person_no_car": "Человек без машины",
+                                        "has_car_no_person": "Машина без человека",
+                                        "has_both": "Машина и человек в зоне",
+                                        "has_none": "Зона пуста"
+                                    }
+                                    message = messages.get(rule.condition, "Условие выполнено")
+
+                                    self.alert_signal.emit(zone_index, annotated_frame.copy(), source_id, message,
+                                                           time_in_zone)
+                            else:
+                                class_name = obj.get('class_name')
+                                if class_name != rule.class_name:
+                                    continue
+                                if time_in_zone < rule.min_time:
+                                    continue
+
+                                alert_key = (zone_index, rule.class_name)
+                                last_alert = self.rule_last_alert.get(alert_key, 0)
+                                if current_time - last_alert < rule.cooldown:
+                                    continue
+
+                                self.rule_last_alert[alert_key] = current_time
+                                zone_name = zone_manager.zone_names[zone_index] if zone_index < len(
+                                    zone_manager.zone_names) else f"Zone_{zone_index}"
+                                self.alert_signal.emit(zone_index, annotated_frame.copy(), source_id, class_name,
+                                                       time_in_zone)
+                    else:
+                        self.track_zone_time.pop(key, None)
+
+                active_zones = {obj['zone_index'] for obj in objects if
+                                obj.get('in_zone') and obj.get('zone_index') is not None}
 
                 all_frames.append({
                     'id': source_id,

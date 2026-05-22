@@ -5,16 +5,11 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="telegram notifications fixed, grid videos work now">
-      <change afterPath="$PROJECT_DIR$/core/zone_rules.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/output/email_notifier.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_email.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/ui/rule_dialog.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/config/sources.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/sources.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/alert_filter.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/alert_filter.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/zone_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/zone_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/zone_rules.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/zone_rules.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/input/video_thread.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_thread.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/main_window.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ui/rule_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/rule_dialog.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/video_widget.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/video_widget.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -46,61 +41,61 @@
 }</component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.2087733473833833" />
-      <entry key="MS500" value="1.7982005475034857" />
-      <entry key="S2" value="2.43375587799601" />
-      <entry key="S5" value="2.7324966724161714" />
-      <entry key="S10" value="2.858150940846901" />
-      <entry key="S30" value="2.9507813933312006" />
-      <entry key="S60" value="2.9751423049890797" />
-      <entry key="M2" value="2.992295494820368" />
-      <entry key="M5" value="3.524348500357256" />
-      <entry key="M10" value="6.066189267762966" />
-      <entry key="M15" value="9.276065599179649" />
-      <entry key="M30" value="20.00876827562161" />
-      <entry key="H1" value="37.65008634321584" />
-      <entry key="H2" value="56.01808479268788" />
-      <entry key="H4" value="69.74950727695958" />
-      <entry key="D1" value="84.58082860869604" />
-      <entry key="W1" value="87.50133374190337" />
+      <entry key="MS100" value="1.0" />
+      <entry key="MS500" value="1.0000000000532658" />
+      <entry key="S2" value="1.002701544197287" />
+      <entry key="S5" value="1.093895511213375" />
+      <entry key="S10" value="1.3064237445325917" />
+      <entry key="S30" value="1.6741773202123578" />
+      <entry key="S60" value="1.8210830166386087" />
+      <entry key="M2" value="1.906136312438894" />
+      <entry key="M5" value="1.9614826810201642" />
+      <entry key="M10" value="2.004554663532603" />
+      <entry key="M15" value="2.1598493905956904" />
+      <entry key="M30" value="4.23471265001656" />
+      <entry key="H1" value="14.186393055683904" />
+      <entry key="H2" value="34.09544736467664" />
+      <entry key="H4" value="55.57899412769167" />
+      <entry key="D1" value="85.21562518439448" />
+      <entry key="W1" value="91.84243821308654" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
-      <entry key="S2" value="1.430093000528034E-221" />
-      <entry key="S5" value="4.593521066131539E-89" />
-      <entry key="S10" value="6.777551966699733E-45" />
-      <entry key="S30" value="1.8924494399547138E-15" />
-      <entry key="S60" value="4.3502292352871625E-8" />
-      <entry key="M2" value="2.0857203157232288E-4" />
-      <entry key="M5" value="0.03370870998541933" />
-      <entry key="M10" value="0.1866900481925503" />
-      <entry key="M15" value="0.3548207371766176" />
-      <entry key="M30" value="0.9088761653660201" />
-      <entry key="H1" value="1.9026944118199347" />
-      <entry key="H2" value="3.0021705115273427" />
-      <entry key="H4" value="3.8498331337967864" />
-      <entry key="D1" value="4.78280370379556" />
-      <entry key="W1" value="4.968278424067098" />
+      <entry key="S2" value="0.0" />
+      <entry key="S5" value="0.0" />
+      <entry key="S10" value="5.97780020172231E-239" />
+      <entry key="S30" value="3.91003338117347E-80" />
+      <entry key="S60" value="1.9773804341030253E-40" />
+      <entry key="M2" value="1.4061935976826524E-20" />
+      <entry key="M5" value="1.1461929967581053E-8" />
+      <entry key="M10" value="1.0886266875801441E-4" />
+      <entry key="M15" value="0.0024765524670666513" />
+      <entry key="M30" value="0.0759318505301095" />
+      <entry key="H1" value="0.5499569281514162" />
+      <entry key="H2" value="1.6140432660771147" />
+      <entry key="H4" value="2.8228110879938306" />
+      <entry key="D1" value="4.541742855387463" />
+      <entry key="W1" value="4.931707972617014" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="1.059617632090609" />
-      <entry key="MS500" value="1.7514550089651877" />
-      <entry key="S2" value="2.417782492535478" />
-      <entry key="S5" value="2.7253088577926845" />
-      <entry key="S10" value="2.854389291792311" />
-      <entry key="S30" value="2.9494863046108653" />
-      <entry key="S60" value="2.9744893862678263" />
-      <entry key="M2" value="2.992174719851563" />
-      <entry key="M5" value="3.5578306598892935" />
-      <entry key="M10" value="6.252447520203278" />
-      <entry key="M15" value="9.630077873426732" />
-      <entry key="M30" value="20.915613929988307" />
-      <entry key="H1" value="39.55004057559331" />
-      <entry key="H2" value="59.01792772598952" />
-      <entry key="H4" value="73.5978127900217" />
-      <entry key="D1" value="89.36331186737247" />
-      <entry key="W1" value="92.46956453318312" />
+      <entry key="MS100" value="0.007812500000000002" />
+      <entry key="MS500" value="0.37892914164424585" />
+      <entry key="S2" value="0.7866039984763865" />
+      <entry key="S5" value="0.9911048579452031" />
+      <entry key="S10" value="1.2417499186353274" />
+      <entry key="S30" value="1.6451908917160947" />
+      <entry key="S60" value="1.805108999197308" />
+      <entry key="M2" value="1.897720374161888" />
+      <entry key="M5" value="1.9580046255079175" />
+      <entry key="M10" value="2.002884980108809" />
+      <entry key="M15" value="2.161073307513427" />
+      <entry key="M30" value="4.309698780259286" />
+      <entry key="H1" value="14.735049171248512" />
+      <entry key="H2" value="35.7079298920124" />
+      <entry key="H4" value="58.40051177704228" />
+      <entry key="D1" value="89.75703172362023" />
+      <entry key="W1" value="96.77409424420274" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -118,6 +113,7 @@
     "Python tests.Python tests in TTT.py.executor": "Run",
     "Python tests.Python tests in test_camera.py.executor": "Run",
     "Python tests.Python tests in test_email.py.executor": "Run",
+    "Python.email_notifier.executor": "Run",
     "Python.libraries.executor": "Run",
     "Python.main.executor": "Run",
     "Python.main_window.executor": "Run",
@@ -204,7 +200,7 @@
       <workItem from="1779378090553" duration="1654000" />
       <workItem from="1779440653829" duration="535000" />
       <workItem from="1779441216567" duration="86000" />
-      <workItem from="1779443306476" duration="8731000" />
+      <workItem from="1779443306476" duration="14884000" />
     </task>
     <servers />
   </component>
@@ -217,7 +213,8 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/azs_video_monitoring$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1778938162044" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/ui" />
-    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1779452353156" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1779460395744" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/azs_video_monitoring$email_notifier.coverage" NAME="email_notifier Coverage Results" MODIFIED="1779452786062" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/output" />
     <SUITE FILE_PATH="coverage/azs_video_monitoring$.coverage" NAME=" Coverage Results" MODIFIED="1779452223122" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/azs_video_monitoring$libraries.coverage" NAME="libraries Coverage Results" MODIFIED="1778073420839" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
     <SUITE FILE_PATH="coverage/azs_video_monitoring$detection.coverage" NAME="detection Coverage Results" MODIFIED="1778939612542" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/core" />

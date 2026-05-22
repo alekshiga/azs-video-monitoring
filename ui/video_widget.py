@@ -107,24 +107,45 @@ class VideoWidget(QLabel):
             self.drawing = False
             rect = QRect(self.start_point, self.end_point).normalized()
             if rect.width() >= 20 and rect.height() >= 20:
-                name, ok = QInputDialog.getText(self, "Добавление зоны", "Введите название зоны", text=f"Зона {len(self.zones)}")
-                name = name if ok and name else f"Зона {len(self.zones)}"
-                self.zones.append((rect.x(), rect.y(), rect.width(), rect.height()))
-                self.zone_names.append(name)
-                self.zone_added.emit(self.zones)
-            self.update()
+                from ui.rule_dialog import RuleDialog
+                dialog = RuleDialog(self)
+
+                if dialog.exec():
+                    rule = dialog.get_rule()
+
+                    name, ok = QInputDialog.getText(
+                        self,
+                        "Название зоны",
+                        "Введите название зоны:",
+                        text=f"Зона {len(self.zones)}"
+                    )
+                    zone_name = name if ok and name else f"Зона {len(self.zones)}"
+
+                    zone = (rect.x(), rect.y(), rect.width(), rect.height())
+                    self.zones.append(zone)
+                    self.zone_names.append(zone_name)
+
+                    zone_idx = len(self.zones) - 1
+                    self.zone_rules[zone_idx] = [rule]
+
+                    self.zone_added.emit(self.zones)
+                    self.update()
+                else:
+                    self.update()
+            else:
+                self.update()
 
     def mouseDoubleClickEvent(self, event):
         for i, zone in enumerate(self.zones):
             if QRect(*zone).contains(event.pos()):
-                new_name, ok = QInputDialog.getText(self, "Редактирование зоны", f"Название для зоны {i}:", text=self.zone_names[i])
-                if ok and new_name:
-                    self.zone_names[i] = new_name
-                    self.zone_added.emit(self.zones)
-                    self.update()
+                self.zone_double_clicked.emit(i)
                 break
 
-    def set_zones(self, zones, zone_names=None):
+    def set_zones(self, zones, zone_names=None, zone_rules=None):
         self.zones = zones.copy()
         self.zone_names = zone_names.copy() if zone_names else [f"Зона {i}" for i in range(len(zones))]
+        if zone_rules:
+            self.zone_rules = zone_rules.copy()
+        else:
+            self.zone_rules = {}
         self.update()

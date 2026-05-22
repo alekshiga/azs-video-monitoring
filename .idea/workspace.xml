@@ -1,17 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="ALL" />
+  </component>
   <component name="ChangeListManager">
-    <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/core/scenario_analyzer.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/ui/image_stitching.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+    <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="telegram notifications fixed, grid videos work now">
+      <change afterPath="$PROJECT_DIR$/core/zone_rules.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/output/email_notifier.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/tests/test_email.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/ui/rule_dialog.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/config/sources.json" beforeDir="false" afterPath="$PROJECT_DIR$/config/sources.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/detection.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/detection.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/input/source_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/source_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/input/video_source.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_source.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/alert_filter.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/alert_filter.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/core/zone_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/zone_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/input/video_thread.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_thread.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/output/telegram_notifier.py" beforeDir="false" afterPath="$PROJECT_DIR$/output/telegram_notifier.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/main_window.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/video_widget.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/video_widget.py" afterDir="false" />
     </list>
@@ -30,18 +32,77 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="GitHubPullRequestSearchHistory"><![CDATA[{
-  "lastFilter": {
-    "state": "OPEN",
-    "assignee": "alekshiga"
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;alekshiga&quot;
   }
-}]]></component>
-  <component name="GithubPullRequestsUISettings"><![CDATA[{
-  "selectedUrlAndAccountId": {
-    "url": "https://github.com/alekshiga/azs-video-monitoring",
-    "accountId": "f7bad9b8-1cfa-450a-98c6-980c226e900a"
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/alekshiga/azs-video-monitoring&quot;,
+    &quot;accountId&quot;: &quot;f7bad9b8-1cfa-450a-98c6-980c226e900a&quot;
   }
-}]]></component>
+}</component>
+  <component name="NextEditCompletionFeaturesState">
+    <decayedCancelled>
+      <entry key="MS100" value="1.2087733473833833" />
+      <entry key="MS500" value="1.7982005475034857" />
+      <entry key="S2" value="2.43375587799601" />
+      <entry key="S5" value="2.7324966724161714" />
+      <entry key="S10" value="2.858150940846901" />
+      <entry key="S30" value="2.9507813933312006" />
+      <entry key="S60" value="2.9751423049890797" />
+      <entry key="M2" value="2.992295494820368" />
+      <entry key="M5" value="3.524348500357256" />
+      <entry key="M10" value="6.066189267762966" />
+      <entry key="M15" value="9.276065599179649" />
+      <entry key="M30" value="20.00876827562161" />
+      <entry key="H1" value="37.65008634321584" />
+      <entry key="H2" value="56.01808479268788" />
+      <entry key="H4" value="69.74950727695958" />
+      <entry key="D1" value="84.58082860869604" />
+      <entry key="W1" value="87.50133374190337" />
+    </decayedCancelled>
+    <decayedSelected>
+      <entry key="MS100" value="0.0" />
+      <entry key="MS500" value="0.0" />
+      <entry key="S2" value="1.430093000528034E-221" />
+      <entry key="S5" value="4.593521066131539E-89" />
+      <entry key="S10" value="6.777551966699733E-45" />
+      <entry key="S30" value="1.8924494399547138E-15" />
+      <entry key="S60" value="4.3502292352871625E-8" />
+      <entry key="M2" value="2.0857203157232288E-4" />
+      <entry key="M5" value="0.03370870998541933" />
+      <entry key="M10" value="0.1866900481925503" />
+      <entry key="M15" value="0.3548207371766176" />
+      <entry key="M30" value="0.9088761653660201" />
+      <entry key="H1" value="1.9026944118199347" />
+      <entry key="H2" value="3.0021705115273427" />
+      <entry key="H4" value="3.8498331337967864" />
+      <entry key="D1" value="4.78280370379556" />
+      <entry key="W1" value="4.968278424067098" />
+    </decayedSelected>
+    <decayedShown>
+      <entry key="MS100" value="1.059617632090609" />
+      <entry key="MS500" value="1.7514550089651877" />
+      <entry key="S2" value="2.417782492535478" />
+      <entry key="S5" value="2.7253088577926845" />
+      <entry key="S10" value="2.854389291792311" />
+      <entry key="S30" value="2.9494863046108653" />
+      <entry key="S60" value="2.9744893862678263" />
+      <entry key="M2" value="2.992174719851563" />
+      <entry key="M5" value="3.5578306598892935" />
+      <entry key="M10" value="6.252447520203278" />
+      <entry key="M15" value="9.630077873426732" />
+      <entry key="M30" value="20.915613929988307" />
+      <entry key="H1" value="39.55004057559331" />
+      <entry key="H2" value="59.01792772598952" />
+      <entry key="H4" value="73.5978127900217" />
+      <entry key="D1" value="89.36331186737247" />
+      <entry key="W1" value="92.46956453318312" />
+    </decayedShown>
+  </component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 6,
   &quot;fromUser&quot;: false
@@ -51,27 +112,35 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;Python tests.Python tests in TTT.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.Python tests in test_camera.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python.libraries.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main_window.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
-    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;C:/Users/Silya/azs-video-monitoring&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "Python tests.Python tests in TTT.py.executor": "Run",
+    "Python tests.Python tests in test_camera.py.executor": "Run",
+    "Python tests.Python tests in test_email.py.executor": "Run",
+    "Python.libraries.executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.main_window.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
+    "git-widget-placeholder": "master",
+    "ignore.virus.scanning.warn.message": "true",
+    "junie.onboarding.icon.badge.shown": "true",
+    "last_opened_file_path": "C:/Users/Silya/azs-video-monitoring",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "to.speed.mode.migration.done": "true",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RunManager">
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="azs-video-monitoring" />
@@ -107,7 +176,7 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-python-sdk-b63d5a1f7c97-b61e75351b1f-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-261.22158.340" />
+        <option value="bundled-python-sdk-c59985aa861c-c2ffad84badb-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-261.24374.152" />
       </set>
     </attachedChunks>
   </component>
@@ -126,6 +195,16 @@
       <workItem from="1778436338308" duration="5328000" />
       <workItem from="1778472495538" duration="4600000" />
       <workItem from="1778565785858" duration="1148000" />
+      <workItem from="1779249944097" duration="178000" />
+      <workItem from="1779253915310" duration="1289000" />
+      <workItem from="1779287108778" duration="133000" />
+      <workItem from="1779332270113" duration="109000" />
+      <workItem from="1779333397437" duration="93000" />
+      <workItem from="1779345585155" duration="795000" />
+      <workItem from="1779378090553" duration="1654000" />
+      <workItem from="1779440653829" duration="535000" />
+      <workItem from="1779441216567" duration="86000" />
+      <workItem from="1779443306476" duration="8731000" />
     </task>
     <servers />
   </component>
@@ -138,8 +217,8 @@
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/azs_video_monitoring$main_window.coverage" NAME="main_window Coverage Results" MODIFIED="1778938162044" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/ui" />
-    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1778945720924" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
-    <SUITE FILE_PATH="coverage/azs_video_monitoring$.coverage" NAME=" Coverage Results" MODIFIED="1778440660273" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/azs_video_monitoring$main.coverage" NAME="main Coverage Results" MODIFIED="1779452353156" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
+    <SUITE FILE_PATH="coverage/azs_video_monitoring$.coverage" NAME=" Coverage Results" MODIFIED="1779452223122" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$" />
     <SUITE FILE_PATH="coverage/azs_video_monitoring$libraries.coverage" NAME="libraries Coverage Results" MODIFIED="1778073420839" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/tests" />
     <SUITE FILE_PATH="coverage/azs_video_monitoring$detection.coverage" NAME="detection Coverage Results" MODIFIED="1778939612542" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/core" />
   </component>

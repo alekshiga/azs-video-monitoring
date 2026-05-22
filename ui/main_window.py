@@ -12,9 +12,10 @@ from PyQt6.QtWidgets import (
 from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
 from input.video_thread import VideoThread
-from output.telegram_notifier import TelegramNotifier
+from output.email_notifier import EmailNotifier
 from ui.image_stitching import ImageStitcher
 from ui.video_widget import VideoWidget
+from ui.rule_dialog import RuleDialog
 
 
 class MainWindow(QMainWindow):
@@ -22,7 +23,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.video_thread = video_thread
         self.source_manager = source_manager
-        self.telegram = TelegramNotifier()
+        self.email = EmailNotifier()
 
         self.image_stitcher = None
         self.single_video_widget = None
@@ -60,7 +61,7 @@ class MainWindow(QMainWindow):
             """Применение стилей к окну (светлая тема)"""
             self.setStyleSheet("""
                 QMainWindow { background-color: #f0f0f0; }
-    
+
                 QPushButton {
                     padding: 6px 12px;
                     font-size: 12px;
@@ -78,7 +79,7 @@ class MainWindow(QMainWindow):
                     color: #999999;
                     border-color: #dddddd;
                 }
-    
+
                 QTextEdit {
                     background-color: #ffffff;
                     color: #333333;
@@ -87,7 +88,7 @@ class MainWindow(QMainWindow):
                     font-family: monospace;
                     font-size: 11px;
                 }
-    
+
                 QGroupBox {
                     color: #333333;
                     border: 1px solid #cccccc;
@@ -103,16 +104,16 @@ class MainWindow(QMainWindow):
                     padding: 0 5px;
                     background-color: #f0f0f0;
                 }
-    
+
                 QLabel { 
                     color: #333333; 
                 }
-    
+
                 QCheckBox { 
                     color: #333333; 
                     spacing: 8px;
                 }
-    
+
                 QCheckBox::indicator {
                     width: 16px;
                     height: 16px;
@@ -120,7 +121,7 @@ class MainWindow(QMainWindow):
                     border: 1px solid #cccccc;
                     border-radius: 3px;
                 }
-    
+
                 QCheckBox::indicator:checked {
                     background-color: #4caf50;
                     border-color: #4caf50;
@@ -248,6 +249,7 @@ class MainWindow(QMainWindow):
         self.refresh_btn.clicked.connect(self._refresh_source_list)
 
         self.single_video_widget.zone_added.connect(self._on_zones_updated)
+        self.single_video_widget.zone_double_clicked.connect(self.on_zone_double_clicked)
 
     def _set_single_mode(self):
         self.current_mode = "single"
@@ -317,7 +319,8 @@ class MainWindow(QMainWindow):
         sid = self.source_combo.currentData()
         if not sid:
             return
-        if QMessageBox.question(self, "Удаление", f"Удалить камеру '{self.source_combo.currentText()}'?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if QMessageBox.question(self, "Удаление источника", f"Удалить камеру '{self.source_combo.currentText()}'?",
+                                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             self.video_thread.remove_source(sid)
             f = self.source_manager.get_zones_file(sid)
             if f and os.path.exists(f):
@@ -420,17 +423,70 @@ class MainWindow(QMainWindow):
             w.draw_rectangles = draw
         self._add_log(f"Отрисовка рамок: {'включена' if draw else 'выключена'}")
 
-    def on_zone_alert(self, zone_index, frame, source_id):
-        name = None
+    def on_zone_double_clicked(self, zone_index):
+        source_id = self.current_source_id
+        if not source_id:
+            self._add_log("Сначала выберите камеру")
+            return
+
+        zone_manager = self.video_thread.get_zone_manager(source_id)
+        if not zone_manager:
+            self._add_log("Ошибка: менеджер зон не найден")
+            return
+
+        existing_rules = zone_manager.get_rules_for_zone(zone_index)
+
+        if existing_rules:
+            rules_text = ", ".join([f"{r.class_name} ({r.min_time}с)" for r in existing_rules])
+            self._add_log(f"Зона {zone_index}: существующие правила: {rules_text}")
+
+        dialog = RuleDialog(self)
+
+        if dialog.exec():
+            rule = dialog.get_rule()
+            zone_manager.add_rule_to_zone(zone_index, rule)
+
+            self.single_video_widget.zone_rules = zone_manager.zone_rules
+            self.single_video_widget.update()
+
+            zones_file = self.source_manager.get_zones_file(source_id)
+            if zones_file:
+                zone_manager.save_to_file(zones_file)
+
+            self._add_log(f"Добавлено правило для зоны {zone_index}: {rule.class_name} -> {rule.min_time} сек")
+
+    def on_zone_alert(self, zone_index, frame, source_id, class_name, time_in_zone):
+        zone_name = None
         if source_id == self.current_source_id and 0 <= zone_index < len(self.single_video_widget.zone_names):
-            name = self.single_video_widget.zone_names[zone_index]
+            zone_name = self.single_video_widget.zone_names[zone_index]
         elif source_id in self.image_stitcher.video_widgets:
             w = self.image_stitcher.video_widgets[source_id]
             if 0 <= zone_index < len(w.zone_names):
-                name = w.zone_names[zone_index]
+                zone_name = w.zone_names[zone_index]
+
         src = self.source_manager.get_source(source_id)
-        full = f"{src.name} - {name}" if src and name else f"{src.name} - зона {zone_index}" if src else f"Камера {source_id} - зона {zone_index}"
-        self.telegram.send_alert(zone_index, full, frame)
+
+        if zone_name:
+            clean_zone = ''.join(c if ord(c) < 128 else '' for c in zone_name)
+            if not clean_zone.strip():
+                clean_zone = f"Zone_{zone_index}"
+        else:
+            clean_zone = f"Zone_{zone_index}"
+
+        if src:
+            clean_source = ''.join(c if ord(c) < 128 else '' for c in src.name)
+        else:
+            clean_source = f"Camera_{source_id}"
+
+        if class_name:
+            clean_class = ''.join(c if ord(c) < 128 else '' for c in class_name)
+            if not clean_class.strip():
+                clean_class = "object"
+        else:
+            clean_class = "object"
+
+        full_name = f"{clean_source} - {clean_zone}"
+        self.email.send_alert(full_name, clean_class, time_in_zone, frame)
 
     def closeEvent(self, event):
         if self.current_source_id and self.single_video_widget.zones:

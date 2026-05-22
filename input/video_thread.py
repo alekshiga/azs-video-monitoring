@@ -13,7 +13,7 @@ from input.source_manager import SourceManager
 class VideoThread(QThread):
     all_frames_ready = pyqtSignal(list)
     log_signal = pyqtSignal(str)
-    alert_signal = pyqtSignal(int, object, int)
+    alert_signal = pyqtSignal(int, object, int, str, float)
 
     def __init__(self, source_manager: SourceManager):
         super().__init__()
@@ -114,14 +114,17 @@ class VideoThread(QThread):
                         obj['zone_index'] = None
 
                 alert_zones = self.alert_filters[source_id].process_frame(objects, zone_manager)
-                for zone_idx in alert_zones:
-                    zone_name = zone_manager.zone_names[zone_idx] if zone_idx < len(zone_manager.zone_names) else f"Зона {zone_idx}"
-                    self.alert_signal.emit(zone_idx, annotated_frame.copy(), source_id)
+                for alert in alert_zones:
+                    zone_idx = alert['zone_idx']
+                    time_in_zone = alert['time_in_zone']
+                    zone_name = zone_manager.zone_names[zone_idx] if zone_idx < len(
+                        zone_manager.zone_names) else f"Zone_{zone_idx}"
+                    self.alert_signal.emit(zone_idx, annotated_frame.copy(), source_id, zone_name, time_in_zone)
 
                 current_time = time.time()
                 scenario_alerts = self.scenario_analyzers[source_id].update(objects, current_time)
                 for alert in scenario_alerts:
-                    self.alert_signal.emit(-1, annotated_frame.copy(), source_id)
+                    self.alert_signal.emit(-1, annotated_frame.copy(), source_id, alert.get('message', 'scenario'), 0)
 
                 active_zones = {obj['zone_index'] for obj in objects if obj.get('in_zone') and obj.get('zone_index') is not None}
 

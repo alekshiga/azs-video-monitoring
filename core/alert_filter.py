@@ -75,32 +75,32 @@ class AlertFilter:
         :return: список индексов зон, где нужна тревога
         """
         current_time = time.time()
-        alert_zones = set()
+        alert_zones = []
 
         for obj in objects:
             track_id = obj.get('track_id')
             bbox = obj.get('bbox')
-            obj.get('area', 0)
-
             if track_id is None or bbox is None:
                 continue
 
-            # Ищем все зоны, с которыми пересекается объект
-            intersecting_zones = zone_manager.get_all_intersections(
-                bbox, self.min_overlap_ratio
-            )
+            intersecting_zones = zone_manager.get_all_intersections(bbox, self.min_overlap_ratio)
 
             for zone_idx in intersecting_zones:
                 if self.process_object(track_id, zone_idx, current_time, in_zone=True):
-                    alert_zones.add(zone_idx)
-                    
+                    key = (track_id, zone_idx)
+                    time_in_zone = current_time - self.track_zone_entry.get(key, current_time)
+                    alert_zones.append({
+                        'zone_idx': zone_idx,
+                        'time_in_zone': time_in_zone
+                    })
+
             for zone_idx in range(len(zone_manager.zones)):
                 if zone_idx not in intersecting_zones:
                     key = (track_id, zone_idx)
                     if key in self.track_zone_entry:
                         self.process_object(track_id, zone_idx, current_time, in_zone=False)
 
-        return list(alert_zones)
+        return alert_zones
 
     def get_stats_text(self):
         return f"Тревог: {self.total_alerts} | Игнорировано: {self.total_ignored}"

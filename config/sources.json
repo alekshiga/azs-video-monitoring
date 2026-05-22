@@ -2,21 +2,21 @@
   "sources": [
     {
       "id": 1,
-      "name": "Тестовое видео 1",
+      "name": "Test video 1",
       "path": "videos/vid1.mp4",
       "enabled": true,
       "type": "file"
     },
     {
       "id": 2,
-      "name": "Тестовое видео 2",
+      "name": "Test video 2",
       "path": "videos/vid2.mp4",
       "enabled": true,
       "type": "file"
     },
     {
       "id": 3,
-      "name": "Тестовое видео 3",
+      "name": "Test video 3",
       "path": "videos/vid3.mp4",
       "enabled": true,
       "type": "file"

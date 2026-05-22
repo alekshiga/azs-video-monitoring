@@ -6,6 +6,7 @@ from PyQt6.QtCore import Qt, QRect, pyqtSignal, QTimer
 
 class VideoWidget(QLabel):
     zone_added = pyqtSignal(list)
+    zone_double_clicked = pyqtSignal(int)
 
     def __init__(self):
         super().__init__()

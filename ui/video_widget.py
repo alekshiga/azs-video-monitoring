@@ -12,6 +12,7 @@ class VideoWidget(QLabel):
         super().__init__()
         self.current_pixmap = None
         self.zones = []
+        self.display_zones = []
         self.zone_names = []
         self.active_zones = []
         self.moving_objects = []
@@ -43,6 +44,7 @@ class VideoWidget(QLabel):
         bytes_per_line = ch * w
         image = QImage(rgb.tobytes(), w, h, bytes_per_line, QImage.Format.Format_RGB888).copy()
         self.current_pixmap = QPixmap.fromImage(image)
+        self._recalc_display_zones()
         self.update()
 
     def paintEvent(self, event):
@@ -66,7 +68,7 @@ class VideoWidget(QLabel):
             painter.end()
             return
 
-        for i, zone in enumerate(self.zones):
+        for i, zone in enumerate(self.display_zones):
             rect = QRect(*zone)
             if i in self.active_zones:
                 painter.setPen(QPen(QColor(255, 0, 0), 3))
@@ -106,34 +108,68 @@ class VideoWidget(QLabel):
         if event.button() == Qt.MouseButton.LeftButton and self.drawing:
             self.drawing = False
             rect = QRect(self.start_point, self.end_point).normalized()
-            if rect.width() >= 20 and rect.height() >= 20:
-                from ui.rule_dialog import RuleDialog
-                dialog = RuleDialog(self)
+            if rect.width() >= 10 and rect.height() >= 10:
+                name, ok = QInputDialog.getText(
+                    self,
+                    "Название зоны",
+                    "Введите название зоны:",
+                    text=f"Зона {len(self.zones)}"
+                )
+                zone_name = name if ok and name else f"Зона {len(self.zones)}"
 
-                if dialog.exec():
-                    rule = dialog.get_rule()
+                if self.frame_width > 0 and self.frame_height > 0:
+                    widget_w = self.width()
+                    widget_h = self.height()
+                    scale_x = self.frame_width / widget_w
+                    scale_y = self.frame_height / widget_h
 
-                    name, ok = QInputDialog.getText(
-                        self,
-                        "Название зоны",
-                        "Введите название зоны:",
-                        text=f"Зона {len(self.zones)}"
-                    )
-                    zone_name = name if ok and name else f"Зона {len(self.zones)}"
-
-                    zone = (rect.x(), rect.y(), rect.width(), rect.height())
-                    self.zones.append(zone)
-                    self.zone_names.append(zone_name)
-
-                    zone_idx = len(self.zones) - 1
-                    self.zone_rules[zone_idx] = [rule]
-
-                    self.zone_added.emit(self.zones)
-                    self.update()
+                    x = int(rect.x() * scale_x)
+                    y = int(rect.y() * scale_y)
+                    w = int(rect.width() * scale_x)
+                    h = int(rect.height() * scale_y)
                 else:
-                    self.update()
+                    x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
+
+                zone = (x, y, w, h)
+                self.zones.append(zone)
+                self.zone_names.append(zone_name)
+
+                self._recalc_display_zones()
+                self.zone_added.emit(self.zones)
+                self.update()
             else:
                 self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._recalc_display_zones()
+        self.update()
+
+    def _recalc_display_zones(self):
+        """
+        Пересчитывает зоны из координат кадра в координаты виджета
+        """
+        if self.frame_width == 0 or self.frame_height == 0:
+            self.display_zones = self.zones.copy()
+            return
+
+        widget_w = self.width()
+        widget_h = self.height()
+        if widget_w == 0 or widget_h == 0:
+            self.display_zones = self.zones.copy()
+            return
+
+        scale_x = widget_w / self.frame_width
+        scale_y = widget_h / self.frame_height
+
+        self.display_zones = []
+        for (x, y, w, h) in self.zones:
+            self.display_zones.append((
+                int(x * scale_x),
+                int(y * scale_y),
+                int(w * scale_x),
+                int(h * scale_y)
+            ))
 
     def mouseDoubleClickEvent(self, event):
         for i, zone in enumerate(self.zones):
@@ -148,4 +184,5 @@ class VideoWidget(QLabel):
             self.zone_rules = zone_rules.copy()
         else:
             self.zone_rules = {}
+        self._recalc_display_zones()
         self.update()

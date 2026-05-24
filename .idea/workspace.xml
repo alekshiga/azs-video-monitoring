@@ -6,10 +6,7 @@
   <component name="ChangeListManager">
     <list default="true" id="2bc2b39f-3643-4852-a82f-6c9cfd3811ca" name="Changes" comment="telegram notifications fixed, grid videos work now">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/core/zone_rules.py" beforeDir="false" afterPath="$PROJECT_DIR$/core/zone_rules.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/input/video_thread.py" beforeDir="false" afterPath="$PROJECT_DIR$/input/video_thread.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ui/main_window.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/main_window.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/ui/rule_dialog.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/rule_dialog.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/config/zones_cam_1.json" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/ui/video_widget.py" beforeDir="false" afterPath="$PROJECT_DIR$/ui/video_widget.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -41,61 +38,61 @@
 }</component>
   <component name="NextEditCompletionFeaturesState">
     <decayedCancelled>
-      <entry key="MS100" value="1.0" />
-      <entry key="MS500" value="1.0000000000532658" />
-      <entry key="S2" value="1.002701544197287" />
-      <entry key="S5" value="1.093895511213375" />
-      <entry key="S10" value="1.3064237445325917" />
-      <entry key="S30" value="1.6741773202123578" />
-      <entry key="S60" value="1.8210830166386087" />
-      <entry key="M2" value="1.906136312438894" />
-      <entry key="M5" value="1.9614826810201642" />
-      <entry key="M10" value="2.004554663532603" />
-      <entry key="M15" value="2.1598493905956904" />
-      <entry key="M30" value="4.23471265001656" />
-      <entry key="H1" value="14.186393055683904" />
-      <entry key="H2" value="34.09544736467664" />
-      <entry key="H4" value="55.57899412769167" />
-      <entry key="D1" value="85.21562518439448" />
-      <entry key="W1" value="91.84243821308654" />
+      <entry key="MS100" value="1.0000000007175802" />
+      <entry key="MS500" value="1.0278874552967956" />
+      <entry key="S2" value="2.0374021404100815" />
+      <entry key="S5" value="3.303655839709608" />
+      <entry key="S10" value="4.029220331395855" />
+      <entry key="S30" value="4.64432866653167" />
+      <entry key="S60" value="4.832894709450562" />
+      <entry key="M2" value="5.182390232710501" />
+      <entry key="M5" value="6.528712818045527" />
+      <entry key="M10" value="7.7927782645784385" />
+      <entry key="M15" value="8.500335333358372" />
+      <entry key="M30" value="10.961478346672548" />
+      <entry key="H1" value="20.602867828090222" />
+      <entry key="H2" value="40.34579617008136" />
+      <entry key="H4" value="62.180963388346385" />
+      <entry key="D1" value="92.86121307646704" />
+      <entry key="W1" value="99.78791092291164" />
     </decayedCancelled>
     <decayedSelected>
       <entry key="MS100" value="0.0" />
       <entry key="MS500" value="0.0" />
       <entry key="S2" value="0.0" />
       <entry key="S5" value="0.0" />
-      <entry key="S10" value="5.97780020172231E-239" />
-      <entry key="S30" value="3.91003338117347E-80" />
-      <entry key="S60" value="1.9773804341030253E-40" />
-      <entry key="M2" value="1.4061935976826524E-20" />
-      <entry key="M5" value="1.1461929967581053E-8" />
-      <entry key="M10" value="1.0886266875801441E-4" />
-      <entry key="M15" value="0.0024765524670666513" />
-      <entry key="M30" value="0.0759318505301095" />
-      <entry key="H1" value="0.5499569281514162" />
-      <entry key="H2" value="1.6140432660771147" />
-      <entry key="H4" value="2.8228110879938306" />
-      <entry key="D1" value="4.541742855387463" />
-      <entry key="W1" value="4.931707972617014" />
+      <entry key="S10" value="4.700897100970427E-254" />
+      <entry key="S30" value="3.6090556741400404E-85" />
+      <entry key="S60" value="6.007541655402846E-43" />
+      <entry key="M2" value="7.750833281387964E-22" />
+      <entry key="M5" value="3.5956636714436634E-9" />
+      <entry key="M10" value="6.0973290461475585E-5" />
+      <entry key="M15" value="0.0016827566043767694" />
+      <entry key="M30" value="0.06259085288517328" />
+      <entry key="H1" value="0.49931213396905066" />
+      <entry key="H2" value="1.537931150473868" />
+      <entry key="H4" value="2.755450891707909" />
+      <entry key="D1" value="4.523497470343383" />
+      <entry key="W1" value="4.928872804994718" />
     </decayedSelected>
     <decayedShown>
-      <entry key="MS100" value="0.007812500000000002" />
-      <entry key="MS500" value="0.37892914164424585" />
-      <entry key="S2" value="0.7866039984763865" />
-      <entry key="S5" value="0.9911048579452031" />
-      <entry key="S10" value="1.2417499186353274" />
-      <entry key="S30" value="1.6451908917160947" />
-      <entry key="S60" value="1.805108999197308" />
-      <entry key="M2" value="1.897720374161888" />
-      <entry key="M5" value="1.9580046255079175" />
-      <entry key="M10" value="2.002884980108809" />
-      <entry key="M15" value="2.161073307513427" />
-      <entry key="M30" value="4.309698780259286" />
-      <entry key="H1" value="14.735049171248512" />
-      <entry key="H2" value="35.7079298920124" />
-      <entry key="H4" value="58.40051177704228" />
-      <entry key="D1" value="89.75703172362023" />
-      <entry key="W1" value="96.77409424420274" />
+      <entry key="MS100" value="0.4061261983780807" />
+      <entry key="MS500" value="0.8506722717521739" />
+      <entry key="S2" value="1.82605654797503" />
+      <entry key="S5" value="3.125739772048198" />
+      <entry key="S10" value="3.9124100990058617" />
+      <entry key="S30" value="4.597375932310067" />
+      <entry key="S60" value="4.808211506522157" />
+      <entry key="M2" value="5.169161875365643" />
+      <entry key="M5" value="6.522145754927669" />
+      <entry key="M10" value="7.788951430377719" />
+      <entry key="M15" value="8.499190810129724" />
+      <entry key="M30" value="11.022272524928136" />
+      <entry key="H1" value="21.10048205426309" />
+      <entry key="H2" value="41.88197950653254" />
+      <entry key="H4" value="64.93502079212027" />
+      <entry key="D1" value="97.38435368072687" />
+      <entry key="W1" value="104.71672868552332" />
     </decayedShown>
   </component>
   <component name="ProjectColorInfo">{
@@ -107,36 +104,36 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "Python tests.Python tests in TTT.py.executor": "Run",
-    "Python tests.Python tests in test_camera.py.executor": "Run",
-    "Python tests.Python tests in test_email.py.executor": "Run",
-    "Python.email_notifier.executor": "Run",
-    "Python.libraries.executor": "Run",
-    "Python.main.executor": "Run",
-    "Python.main_window.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
-    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "codeWithMe.voiceChat.enabledByDefault": "false",
-    "com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1": "true",
-    "git-widget-placeholder": "master",
-    "ignore.virus.scanning.warn.message": "true",
-    "junie.onboarding.icon.badge.shown": "true",
-    "last_opened_file_path": "C:/Users/Silya/azs-video-monitoring",
-    "node.js.detected.package.eslint": "true",
-    "node.js.detected.package.tslint": "true",
-    "node.js.selected.package.eslint": "(autodetect)",
-    "node.js.selected.package.tslint": "(autodetect)",
-    "nodejs_package_manager_path": "npm",
-    "to.speed.mode.migration.done": "true",
-    "vue.rearranger.settings.migration": "true"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;Python tests.Python tests in TTT.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_camera.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python tests.Python tests in test_email.py.executor&quot;: &quot;Run&quot;,
+    &quot;Python.email_notifier.executor&quot;: &quot;Run&quot;,
+    &quot;Python.libraries.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main_window.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
+    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
+    &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Silya/azs-video-monitoring&quot;,
+    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
+    &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
+    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
+    &quot;node.js.selected.package.tslint&quot;: &quot;(autodetect)&quot;,
+    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
+    &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
+    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}]]></component>
+}</component>
   <component name="RunManager">
     <configuration name="main" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="azs-video-monitoring" />
@@ -201,6 +198,7 @@
       <workItem from="1779440653829" duration="535000" />
       <workItem from="1779441216567" duration="86000" />
       <workItem from="1779443306476" duration="14884000" />
+      <workItem from="1779637210796" duration="10000" />
     </task>
     <servers />
   </component>

@@ -1,0 +1,21 @@
+{
+  "camera_id": null,
+  "zones": [
+    {
+      "name": "Зона 0",
+      "x": 387,
+      "y": 21,
+      "w": 383,
+      "h": 365,
+      "rules": [
+        {
+          "type": "conditional",
+          "condition": "has_person_no_car",
+          "duration": 1,
+          "cooldown": 60,
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

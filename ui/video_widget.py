@@ -22,6 +22,7 @@ class VideoWidget(QLabel):
         self.frame_width = 0
         self.frame_height = 0
         self.draw_rectangles = True
+        self.zone_rules = {}
 
         self.loading = True
         self.loading_angle = 0
@@ -172,7 +173,7 @@ class VideoWidget(QLabel):
             ))
 
     def mouseDoubleClickEvent(self, event):
-        for i, zone in enumerate(self.zones):
+        for i, zone in enumerate(self.display_zones):
             if QRect(*zone).contains(event.pos()):
                 self.zone_double_clicked.emit(i)
                 break

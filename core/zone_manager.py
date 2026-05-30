@@ -121,7 +121,11 @@ class ZoneManager:
 
                 rules_data = zone_data.get("rules", [])
                 if rules_data:
-                    self.zone_rules[i] = [ZoneRule.from_dict(r) for r in rules_data]
+                    from core.zone_rules import ConditionalRule
+                    self.zone_rules[i] = [
+                        ConditionalRule.from_dict(r) if r.get("type") == "conditional" else ZoneRule.from_dict(r)
+                        for r in rules_data
+                    ]
 
             return True
         except Exception as e:

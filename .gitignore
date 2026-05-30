@@ -207,3 +207,4 @@ marimo/_lsp/
 __marimo__/
 exchange.db
 /videos/
+/repomix-output.xml

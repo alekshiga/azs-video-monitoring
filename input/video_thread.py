@@ -69,9 +69,10 @@ class VideoThread(QThread):
 
         self.frame_counters[source_id] = 0
 
-    def update_zones(self, zones, source_id):
+    def update_zones(self, zones, source_id, zone_names=None, zone_rules=None):
         if source_id in self.zone_managers:
-            self.zone_managers[source_id].set_zones(zones)
+            zm = self.zone_managers[source_id]
+            zm.set_zones(zones, zone_names, zone_rules if zone_rules is not None else zm.zone_rules)
             self.track_zone_time.clear()
             self.rule_last_alert.clear()
 
@@ -171,7 +172,7 @@ class VideoThread(QThread):
                                                            time_in_zone)
                             else:
                                 class_name = obj.get('class_name')
-                                if class_name != rule.class_name:
+                                if rule.class_name != "any" and class_name != rule.class_name:
                                     continue
                                 if time_in_zone < rule.min_time:
                                     continue

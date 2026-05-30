@@ -1,4 +1,13 @@
 class ZoneRule:
+    CLASS_LABELS = {
+        "any": "Любой объект (нет движения)",
+        "person": "Человек",
+        "car": "Автомобиль",
+        "truck": "Грузовик",
+        "bus": "Автобус",
+        "motorcycle": "Мотоцикл",
+    }
+
     def __init__(self, class_name="person", min_time=0, cooldown=60, enabled=True):
         self.class_name = class_name
         self.min_time = min_time
@@ -23,13 +32,12 @@ class ZoneRule:
         )
 
 class ConditionalRule:
+    # Реализуемые условия: только те, что проверяются в момент присутствия объекта в зоне.
+    # "has_none" не реализуем — требует отдельного механизма отслеживания пустоты зоны.
     CONDITION_TYPES = {
         "has_car_no_person": "Машина есть, человека нет",
         "has_person_no_car": "Человек есть, машины нет",
         "has_both": "Есть и машина, и человек",
-        "has_none": "Нет ни машины, ни человека",
-        "has_car_only": "Только машина",
-        "has_person_only": "Только человек"
     }
 
     def __init__(self, condition="has_person_no_car", duration=5, cooldown=60, enabled=True):
@@ -39,20 +47,14 @@ class ConditionalRule:
         self.enabled = enabled
 
     def check(self, has_car, has_person, elapsed_time):
-        condition_met = False
-
         if self.condition == "has_car_no_person":
             condition_met = has_car and not has_person
         elif self.condition == "has_person_no_car":
             condition_met = has_person and not has_car
         elif self.condition == "has_both":
             condition_met = has_car and has_person
-        elif self.condition == "has_none":
-            condition_met = not has_car and not has_person
-        elif self.condition == "has_car_only":
-            condition_met = has_car and not has_person
-        elif self.condition == "has_person_only":
-            condition_met = has_person and not has_car
+        else:
+            condition_met = False
 
         return condition_met and elapsed_time >= self.duration
 

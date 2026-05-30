@@ -15,7 +15,7 @@ from input.video_thread import VideoThread
 from output.email_notifier import EmailNotifier
 from ui.image_stitching import ImageStitcher
 from ui.video_widget import VideoWidget
-from ui.rule_dialog import RuleDialog
+from ui.rule_dialog import ZoneRulesDialog
 
 
 class MainWindow(QMainWindow):
@@ -296,7 +296,7 @@ class MainWindow(QMainWindow):
                     zm.zone_names,
                     zm.zone_rules
                 )
-                self.video_thread.update_zones(zm.zones, source_id)
+                self.video_thread.update_zones(zm.zones, source_id, zm.zone_names, zm.zone_rules)
                 self._add_log(f"Загружено зон: {len(zm.zones)}, правил: {sum(len(r) for r in zm.zone_rules.values())}")
             else:
                 self.single_video_widget.zones.clear()
@@ -365,8 +365,8 @@ class MainWindow(QMainWindow):
             return
         zm = self.video_thread.get_zone_manager(sid)
         if zm and zm.load_from_file(path):
-            self.single_video_widget.set_zones(zm.zones, zm.zone_names)
-            self.video_thread.update_zones(zm.zones, sid)
+            self.single_video_widget.set_zones(zm.zones, zm.zone_names, zm.zone_rules)
+            self.video_thread.update_zones(zm.zones, sid, zm.zone_names, zm.zone_rules)
             self._update_zones_count()
             self._add_log(f"Загружены зоны из {path}")
 
@@ -396,6 +396,7 @@ class MainWindow(QMainWindow):
         if sid:
             self.single_video_widget.zones.clear()
             self.single_video_widget.zone_names.clear()
+            self.single_video_widget.zone_rules.clear()
             self.single_video_widget.update()
             if zm := self.video_thread.get_zone_manager(sid):
                 zm.clear_zones()
@@ -443,20 +444,30 @@ class MainWindow(QMainWindow):
             self._add_log("Ошибка: менеджер зон не найден")
             return
 
-        dialog = RuleDialog(self)
+        zone_name = (
+            zone_manager.zone_names[zone_index]
+            if zone_index < len(zone_manager.zone_names)
+            else f"Зона {zone_index}"
+        )
+        existing_rules = zone_manager.get_rules_for_zone(zone_index)
 
-        if dialog.exec():
-            rule = dialog.get_rule()
-            zone_manager.add_rule_to_zone(zone_index, rule)
+        dialog = ZoneRulesDialog(self, zone_name=zone_name, rules=existing_rules)
+        dialog.exec()
 
-            self.single_video_widget.zone_rules = zone_manager.zone_rules
-            self.single_video_widget.update()
+        updated_rules = dialog.get_rules()
+        if updated_rules:
+            zone_manager.zone_rules[zone_index] = updated_rules
+        else:
+            zone_manager.zone_rules.pop(zone_index, None)
 
-            zones_file = self.source_manager.get_zones_file(source_id)
-            if zones_file:
-                zone_manager.save_to_file(zones_file)
+        self.single_video_widget.zone_rules = zone_manager.zone_rules
+        self.single_video_widget.update()
 
-            self._add_log(f"Добавлено правило для зоны {zone_index}: {rule.class_name} -> {rule.min_time} сек")
+        zones_file = self.source_manager.get_zones_file(source_id)
+        if zones_file:
+            zone_manager.save_to_file(zones_file)
+
+        self._add_log(f"Правила зоны '{zone_name}': {len(updated_rules)} шт.")
 
     def on_zone_alert(self, zone_index, frame, source_id, class_name, time_in_zone):
         zone_name = None
@@ -494,7 +505,11 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.current_source_id and self.single_video_widget.zones:
             if zm := self.video_thread.get_zone_manager(self.current_source_id):
-                zm.set_zones(self.single_video_widget.zones, self.single_video_widget.zone_names)
+                zm.set_zones(
+                    self.single_video_widget.zones,
+                    self.single_video_widget.zone_names,
+                    self.single_video_widget.zone_rules,
+                )
                 zm.save_to_file(self.source_manager.get_zones_file(self.current_source_id))
         self.video_thread.stop()
         event.accept()

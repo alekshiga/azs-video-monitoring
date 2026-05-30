@@ -406,7 +406,13 @@ class MainWindow(QMainWindow):
 
     def _on_zones_updated(self, zones):
         if self.current_mode == "single" and self.current_source_id:
-            self.video_thread.update_zones(zones, self.current_source_id)
+            sid = self.current_source_id
+            w = self.single_video_widget
+            if zm := self.video_thread.get_zone_manager(sid):
+                zm.set_zones(zones, w.zone_names, w.zone_rules)
+                zm.camera_id = sid
+                zm.save_to_file(self.source_manager.get_zones_file(sid))
+            self.video_thread.update_zones(zones, sid, w.zone_names, w.zone_rules)
             self._update_zones_count()
 
     def _clear_log(self):

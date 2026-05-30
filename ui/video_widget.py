@@ -1,5 +1,5 @@
 import cv2
-from PyQt6.QtWidgets import QLabel, QInputDialog
+from PyQt6.QtWidgets import QLabel, QInputDialog, QMenu
 from PyQt6.QtGui import QImage, QPixmap, QPainter, QPen, QColor, QFont
 from PyQt6.QtCore import Qt, QRect, pyqtSignal, QTimer
 
@@ -95,10 +95,45 @@ class VideoWidget(QLabel):
             self.update()
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.RightButton:
+            self._show_zone_context_menu(event.pos())
+            return
         if event.button() == Qt.MouseButton.LeftButton:
             self.drawing = True
             self.start_point = event.pos()
             self.end_point = event.pos()
+
+    def _show_zone_context_menu(self, pos):
+        zone_index = None
+        for i, zone in enumerate(self.display_zones):
+            if QRect(*zone).contains(pos):
+                zone_index = i
+                break
+
+        if zone_index is None:
+            return
+
+        zone_name = self.zone_names[zone_index] if zone_index < len(self.zone_names) else f"Зона {zone_index}"
+        menu = QMenu(self)
+        delete_action = menu.addAction(f"🗑 Удалить «{zone_name}»")
+        action = menu.exec(self.mapToGlobal(pos))
+        if action == delete_action:
+            self._delete_zone(zone_index)
+
+    def _delete_zone(self, zone_index):
+        self.zones.pop(zone_index)
+        self.zone_names.pop(zone_index)
+        if zone_index in self.zone_rules:
+            del self.zone_rules[zone_index]
+        # Переиндексируем правила зон с большим индексом
+        new_rules = {}
+        for idx, rules in self.zone_rules.items():
+            new_idx = idx - 1 if idx > zone_index else idx
+            new_rules[new_idx] = rules
+        self.zone_rules = new_rules
+        self._recalc_display_zones()
+        self.zone_added.emit(self.zones)
+        self.update()
 
     def mouseMoveEvent(self, event):
         if self.drawing:

@@ -63,10 +63,20 @@ class VideoSource:
         print(f"[{self.name}] Запущен поток захвата")
 
     def _capture_loop(self):
+        reconnect_cooldown = 10.0   # секунд между попытками переподключения
+        last_reconnect_attempt = 0.0
+        self.reconnect_attempts = 0
+
         while self._running:
             if not self.is_connected:
+                now = time.time()
+                if now - last_reconnect_attempt >= reconnect_cooldown:
+                    last_reconnect_attempt = now
+                    self.reconnect_attempts += 1
+                    print(f"[{self.name}] Попытка переподключения #{self.reconnect_attempts}...")
+                    if self.connect():
+                        self.reconnect_attempts = 0
                 time.sleep(1)
-                self.connect()
                 continue
 
             if self.cap and self.cap.isOpened():
@@ -76,7 +86,7 @@ class VideoSource:
                         self.frame_buffer.append(frame.copy())
                 else:
                     self.is_connected = False
-                    print(f"[{self.name}] Потеря соединения с камерой")
+                    print(f"[{self.name}] Потеря соединения")
             time.sleep(0.01)
 
     def get_last_frame(self):

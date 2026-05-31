@@ -14,6 +14,7 @@ class VideoThread(QThread):
     all_frames_ready = pyqtSignal(list)
     log_signal = pyqtSignal(str)
     alert_signal = pyqtSignal(int, object, int, str, float)
+    camera_status_changed = pyqtSignal(int, bool)  # source_id, is_connected
 
     def __init__(self, source_manager: SourceManager):
         super().__init__()
@@ -42,6 +43,7 @@ class VideoThread(QThread):
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(f"VideoThread: {self.device.upper()}")
+        self._source_connected_state = {}  # source_id -> bool, для отслеживания изменений статуса
 
     def init_source(self, source_id):
         if source_id in self.zone_managers:
@@ -94,6 +96,19 @@ class VideoThread(QThread):
 
             for source_id, source in list(self.source_manager.sources.items()):
                 self.init_source(source_id)
+
+                # Отслеживаем смену статуса подключения и эмитим сигнал
+                prev_connected = self._source_connected_state.get(source_id)
+                curr_connected = source.is_connected
+                if prev_connected != curr_connected:
+                    self._source_connected_state[source_id] = curr_connected
+                    self.camera_status_changed.emit(source_id, curr_connected)
+                    if curr_connected:
+                        self.log_signal.emit(f"Камера {source.name}: восстановлено соединение")
+                    else:
+                        attempts = getattr(source, 'reconnect_attempts', 0)
+                        self.log_signal.emit(f"Камера {source.name}: соединение потеряно, переподключение каждые 10 сек")
+
                 frame = source.get_last_frame()
 
                 if frame is None:

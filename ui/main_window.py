@@ -9,6 +9,8 @@ from PyQt6.QtWidgets import (
     QInputDialog, QMessageBox
 )
 
+from output.pdf_report_exporter import export_log_to_pdf
+
 from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
 from input.video_thread import VideoThread
@@ -43,6 +45,7 @@ class MainWindow(QMainWindow):
 
         self.current_mode = "single"
         self.current_source_id = None
+        self._log_entries = []
 
         self.setWindowTitle("Система мониторинга")
         self.setGeometry(100, 100, 1600, 800)
@@ -53,6 +56,7 @@ class MainWindow(QMainWindow):
 
         self.video_thread.alert_signal.connect(self.on_zone_alert)
         self.video_thread.all_frames_ready.connect(self._on_all_frames_ready)
+        self.video_thread.camera_status_changed.connect(self._on_camera_status_changed)
         self.video_thread.start()
         self._add_log("Система мониторинга запущена")
 
@@ -218,9 +222,13 @@ class MainWindow(QMainWindow):
         self.log_widget = QTextEdit()
         self.log_widget.setReadOnly(True)
         self.log_widget.setMaximumHeight(250)
-        self.clear_log_btn = QPushButton("Очистить")
         log_layout.addWidget(self.log_widget)
-        log_layout.addWidget(self.clear_log_btn)
+        log_btn_layout = QHBoxLayout()
+        self.clear_log_btn = QPushButton("Очистить")
+        self.export_pdf_btn = QPushButton("Экспорт PDF")
+        log_btn_layout.addWidget(self.clear_log_btn)
+        log_btn_layout.addWidget(self.export_pdf_btn)
+        log_layout.addLayout(log_btn_layout)
         log_group.setLayout(log_layout)
         panel_layout.addWidget(log_group)
 
@@ -238,6 +246,7 @@ class MainWindow(QMainWindow):
         self.save_zones_btn.clicked.connect(self._save_zones)
         self.clear_zones_btn.clicked.connect(self._clear_zones)
         self.clear_log_btn.clicked.connect(self._clear_log)
+        self.export_pdf_btn.clicked.connect(self._export_pdf)
         self.add_camera_btn.clicked.connect(self._add_network_camera)
         self.remove_btn.clicked.connect(self.remove_current_camera)
 
@@ -272,7 +281,8 @@ class MainWindow(QMainWindow):
     def _refresh_source_list(self):
         self.source_combo.clear()
         for src in self.source_manager.get_sources_list():
-            self.source_combo.addItem(src['name'], src['id'])
+            indicator = "🟢" if src['connected'] else "🔴"
+            self.source_combo.addItem(f"{indicator} {src['name']}", src['id'])
         if self.source_combo.count() > 0:
             self.source_combo.setCurrentIndex(0)
             self._on_source_changed(0)
@@ -417,6 +427,29 @@ class MainWindow(QMainWindow):
 
     def _clear_log(self):
         self.log_widget.clear()
+        self._log_entries.clear()
+
+    def _export_pdf(self):
+        if not self._log_entries:
+            QMessageBox.information(self, "Экспорт", "Журнал пустой, нечего экспортировать.")
+            return
+
+        default_name = f"report_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.pdf"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Сохранить отчет", default_name, "PDF (*.pdf)"
+        )
+        if not path:
+            return
+
+        src = self.source_manager.get_source(self.current_source_id) if self.current_source_id else None
+        camera_name = src.name if src else ""
+
+        ok = export_log_to_pdf(self._log_entries, path, camera_name=camera_name)
+        if ok:
+            self._add_log(f"Отчет сохранен: {os.path.basename(path)}")
+            QMessageBox.information(self, "Готово", f"Отчет сохранен:\n{path}")
+        else:
+            QMessageBox.warning(self, "Ошибка", "Не удалось создать PDF. Проверьте консоль.")
 
     def _update_zones_count(self):
         self.zones_count_label.setText(f"Зон: {len(self.single_video_widget.zones)}")
@@ -427,7 +460,9 @@ class MainWindow(QMainWindow):
         if time.time() - self._last_log_time < 0.05:
             return
         self._last_log_time = time.time()
-        self.log_widget.append(f"[{datetime.now().strftime('%H:%M:%S')}] {text}")
+        entry = f"[{datetime.now().strftime('%H:%M:%S')}] {text}"
+        self._log_entries.append(entry)
+        self.log_widget.append(entry)
         if sb := self.log_widget.verticalScrollBar():
             sb.setValue(sb.maximum())
 
@@ -507,6 +542,16 @@ class MainWindow(QMainWindow):
 
         full_name = f"{clean_source} - {clean_zone}"
         self.email.send_alert(full_name, clean_class, time_in_zone, frame)
+
+    def _on_camera_status_changed(self, source_id, is_connected):
+        """Обновляет текст в комбобоксе: добавляет/убирает индикатор статуса."""
+        for i in range(self.source_combo.count()):
+            if self.source_combo.itemData(i) == source_id:
+                src = self.source_manager.get_source(source_id)
+                if src:
+                    indicator = "🟢" if is_connected else "🔴"
+                    self.source_combo.setItemText(i, f"{indicator} {src.name}")
+                break
 
     def closeEvent(self, event):
         if self.current_source_id and self.single_video_widget.zones:

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
@@ -29,9 +29,20 @@ class ZoneStats:
         self.zone_index = zone_index
         self.zone_name = zone_name
         self.visits: list[Visit] = []
+        self.entered = 0   # всего ТС въехало в зону
+        self.exited = 0    # всего ТС выехало из зоны
 
     def add_visit(self, visit: Visit):
         self.visits.append(visit)
+
+    def conversion(self) -> Optional[float]:
+        """
+        Заехавши машины = выехавшие
+        :return:
+        """
+        if self.entered == 0:
+            return None
+        return self.exited / self.entered
 
     def vehicle_visits(self) -> list[Visit]:
         return [v for v in self.visits if v.class_name in VEHICLE_CLASSES]
@@ -61,6 +72,9 @@ class ZoneStats:
         return {
             "zone_name": self.zone_name,
             "total_vehicles": len(vv),
+            "entered": self.entered,
+            "exited": self.exited,
+            "conversion": self.conversion(),
             "avg": sum(durations) / len(durations) if durations else None,
             "min": min(durations, default=None),
             "max": max(durations, default=None),
@@ -76,18 +90,41 @@ class StatsTracker:
     """
     Отслеживает завершённые визиты объектов по зонам
     """
-
-    def __init__(self):
+    def __init__(self, db=None, min_visit_duration: float = 3.0):
+        """
+        :param db: экземпляр core.database.Database
+        :param min_visit_duration: минимальная длительность визита для учёта в
+            статистике длительностей. На файлах видео ускорено, поэтому
+            по умолчанию 3 сек, а на реальной IP-камере лучше 30+ сек
+        """
+        self.db = db
+        self.min_visit_duration = min_visit_duration
         self._zone_stats: dict[tuple, ZoneStats] = {}
         self._active: dict[tuple, tuple] = {}
         self.session_start = datetime.now()
 
+    def _ensure_zone(self, source_id, zone_index: int, zone_name: str) -> ZoneStats:
+        zone_key = (source_id, zone_index)
+        if zone_key not in self._zone_stats:
+            self._zone_stats[zone_key] = ZoneStats(zone_index, zone_name or f"Зона {zone_index}")
+        return self._zone_stats[zone_key]
 
     def record_entry(self, source_id, track_id: int, zone_index: int,
-                     class_name: str, entered_at: float):
+                     class_name: str, entered_at: float, zone_name: str = None):
         key = (source_id, track_id, zone_index)
-        if key not in self._active:
-            self._active[key] = (entered_at, class_name)
+        if key in self._active:
+            return
+        self._active[key] = (entered_at, class_name)
+
+        # считаем, сколько тс заехало
+        if class_name in VEHICLE_CLASSES:
+            zs = self._ensure_zone(source_id, zone_index, zone_name)
+            zs.entered += 1
+            if self.db:
+                self.db.insert_event(
+                    source_id, zone_index, zs.zone_name, "entry",
+                    class_name=class_name, track_id=track_id, ts=entered_at,
+                )
 
     def record_exit(self, source_id, track_id: int, zone_index: int,
                     zone_name: str, exited_at: float):
@@ -99,15 +136,21 @@ class StatsTracker:
         entered_at, class_name = entry
         duration = exited_at - entered_at
 
-        # Фильтруем слишком короткие визиты (меньше 30 секунд), вдруг клиент не заправился
-        #//todo т.к. на файле видео почему-то ускорено, поставил 3 сек, но на IP-камере лучше поставить 30+ сек
-        if duration < 3.0:
+        # баланс заехало = выехало)
+        if class_name in VEHICLE_CLASSES:
+            zs = self._ensure_zone(source_id, zone_index, zone_name)
+            zs.exited += 1
+            if self.db:
+                self.db.insert_event(
+                    source_id, zone_index, zone_name, "exit",
+                    class_name=class_name, track_id=track_id, ts=exited_at,
+                )
+
+        # Фильтруем слишком короткие визиты для статистики длительностей
+        if duration < self.min_visit_duration:
             return
 
-        zone_key = (source_id, zone_index)
-        if zone_key not in self._zone_stats:
-            self._zone_stats[zone_key] = ZoneStats(zone_index, zone_name)
-
+        zs = self._ensure_zone(source_id, zone_index, zone_name)
         visit = Visit(
             zone_index=zone_index,
             zone_name=zone_name,
@@ -117,7 +160,13 @@ class StatsTracker:
             exited_at=exited_at,
             duration=duration,
         )
-        self._zone_stats[zone_key].add_visit(visit)
+        zs.add_visit(visit)
+
+        if self.db:
+            self.db.insert_visit(
+                source_id, zone_index, zone_name, class_name, track_id,
+                entered_at, exited_at, duration,
+            )
 
 
     def cleanup_lost_tracks(self, source_id, active_track_ids: set,
@@ -178,6 +227,9 @@ class StatsTracker:
                 continue
             lines.append(f"")
             lines.append(f"Зона: {sm['zone_name']}")
+            lines.append(f"  Въехало ТС: {sm['entered']}  |  Выехало ТС: {sm['exited']}")
+            if sm["conversion"] is not None:
+                lines.append(f"  Конверсия (выезд/въезд): {sm['conversion'] * 100:.0f}%")
             lines.append(f"  Транспортных средств: {sm['total_vehicles']}")
             if sm["avg"] is not None:
                 lines.append(f"  Среднее время в зоне: {self.format_duration(sm['avg'])}")

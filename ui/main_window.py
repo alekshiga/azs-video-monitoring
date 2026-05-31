@@ -251,6 +251,7 @@ class MainWindow(QMainWindow):
         self.clear_log_btn = QPushButton("Очистить")
         log_btn_layout.addWidget(self.export_pdf_btn)
         log_btn_layout.addWidget(self.clear_log_btn)
+
         log_layout.addLayout(log_btn_layout)
         log_group.setLayout(log_layout)
         panel_layout.addWidget(log_group)
@@ -584,9 +585,14 @@ class MainWindow(QMainWindow):
         lines = []
         for zs in sorted(all_stats, key=lambda s: s.zone_index):
             sm = zs.summary()
-            if sm["total_vehicles"] == 0:
+            if sm["total_vehicles"] == 0 and sm["entered"] == 0:
                 continue
             lines.append(f"<b>{sm['zone_name']}</b>")
+            lines.append(f"Въехало: {sm['entered']} &nbsp;|&nbsp; Выехало: {sm['exited']}")
+            if sm["conversion"] is not None:
+                pct = sm["conversion"] * 100
+                color = "#2e7d32" if abs(pct - 100) < 1 else "#c0392b"
+                lines.append(f"Конверсия: <span style='color:{color}'>{pct:.0f}%</span>")
             lines.append(f"Всего ТС: {sm['total_vehicles']}")
             if sm["avg"] is not None:
                 lines.append(f"Среднее время: {fmt(sm['avg'])}")

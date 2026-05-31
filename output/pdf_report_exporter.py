@@ -242,18 +242,25 @@ def export_stats_to_pdf(stats_tracker, source_id, filepath: str, camera_name: st
         fmt = stats_tracker.format_duration
         all_stats = sorted(stats_tracker.get_all_stats(source_id), key=lambda s: s.zone_index)
 
-        if not all_stats or all(s.count() == 0 for s in all_stats):
+        if not all_stats or all(s.count() == 0 and s.entered == 0 for s in all_stats):
             story.append(Paragraph("Нет данных о завершенных визитах за текущий сеанс.", empty_style))
         else:
             total_vehicles = 0
             for zs in all_stats:
                 sm = zs.summary()
-                if sm["total_vehicles"] == 0:
+                if sm["total_vehicles"] == 0 and sm["entered"] == 0:
                     continue
                 total_vehicles += sm["total_vehicles"]
 
                 safe_name = zs.zone_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 story.append(Paragraph(f"Зона: {safe_name}", zone_style))
+
+                story.append(Paragraph(
+                    f"Въехало ТС: {sm['entered']} &nbsp;&nbsp;|&nbsp;&nbsp; Выехало ТС: {sm['exited']}",
+                    row_bold_style))
+                if sm["conversion"] is not None:
+                    story.append(Paragraph(
+                        f"Конверсия (выезд/въезд): {sm['conversion'] * 100:.0f}%", row_style))
 
                 story.append(Paragraph(f"Всего транспортных средств: {sm['total_vehicles']}", row_bold_style))
 

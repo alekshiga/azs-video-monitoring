@@ -4,6 +4,7 @@ import torch
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from core.alert_filter import AlertFilter
+from core.database import Database
 from core.detection import MotionDetector
 from core.scenario_analyzer import ScenarioAnalyzer
 from core.stats_tracker import StatsTracker
@@ -46,7 +47,8 @@ class VideoThread(QThread):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(f"VideoThread: {self.device.upper()}")
         self._source_connected_state = {}  # source_id -> bool, для отслеживания изменений статуса
-        self.stats_tracker = StatsTracker()
+        self.db = Database()
+        self.stats_tracker = StatsTracker(db=self.db)
 
     def init_source(self, source_id):
         if source_id in self.zone_managers:
@@ -166,9 +168,15 @@ class VideoThread(QThread):
                             # Фиксируем вход для статистики (зоны подсчета активны всегда,
                             # зоны контроля активны только если есть правила)
                             if is_counting or rules:
+                                entry_zone_name = (
+                                    zone_manager.zone_names[zone_index]
+                                    if zone_index < len(zone_manager.zone_names)
+                                    else f"Зона {zone_index}"
+                                )
                                 self.stats_tracker.record_entry(
                                     source_id, track_id, zone_index,
-                                    obj.get('class_name', 'unknown'), current_time
+                                    obj.get('class_name', 'unknown'), current_time,
+                                    zone_name=entry_zone_name,
                                 )
 
                         time_in_zone = current_time - self.track_zone_time[key]
@@ -204,6 +212,11 @@ class VideoThread(QThread):
 
                                     self.alert_signal.emit(zone_index, annotated_frame.copy(), source_id, message,
                                                            time_in_zone)
+                                    self.db.insert_event(
+                                        source_id, zone_index, zone_name, "alert",
+                                        class_name=obj.get('class_name'), track_id=track_id,
+                                        ts=current_time, message=message,
+                                    )
                             else:
                                 class_name = obj.get('class_name')
                                 if rule.class_name != "any" and class_name != rule.class_name:
@@ -221,6 +234,11 @@ class VideoThread(QThread):
                                     zone_manager.zone_names) else f"Zone_{zone_index}"
                                 self.alert_signal.emit(zone_index, annotated_frame.copy(), source_id, class_name,
                                                        time_in_zone)
+                                self.db.insert_event(
+                                    source_id, zone_index, zone_name, "alert",
+                                    class_name=class_name, track_id=track_id,
+                                    ts=current_time, message=f"Объект '{class_name}' в зоне",
+                                )
                     else:
                         if key in self.track_zone_time:
                             self.track_zone_time.pop(key)
@@ -259,6 +277,8 @@ class VideoThread(QThread):
         if self.source_manager:
             self.source_manager.stop_all()
         self.wait()
+        if self.db:
+            self.db.close()
 
     def get_zone_manager(self, source_id):
         return self.zone_managers.get(source_id)

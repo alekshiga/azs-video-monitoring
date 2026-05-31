@@ -2,6 +2,9 @@ import json
 import os
 from core.zone_rules import ZoneRule
 
+ZONE_TYPE_CONTROL  = "control"
+ZONE_TYPE_COUNTING = "counting"
+
 
 class ZoneManager:
     def __init__(self, camera_id=None):
@@ -9,25 +12,34 @@ class ZoneManager:
         self.zones = []
         self.zone_names = []
         self.zone_rules = {}
+        self.zone_types = {} # тип зоны (т. к. добавилась зона подсчета клинетов)
 
-    def set_zones(self, zones, zone_names=None, zone_rules=None):
+
+    def set_zones(self, zones, zone_names=None, zone_rules=None, zone_types=None):
         self.zones = zones.copy()
-        if zone_names:
-            self.zone_names = zone_names.copy()
-        else:
-            self.zone_names = [f"Зона {i}" for i in range(len(zones))]
-        if zone_rules:
-            self.zone_rules = zone_rules.copy()
-        else:
-            self.zone_rules = {}
+        self.zone_names = zone_names.copy() if zone_names else [f"Зона {i}" for i in range(len(zones))]
+        self.zone_rules = zone_rules.copy() if zone_rules else {}
+        self.zone_types = zone_types.copy() if zone_types else {}
+
 
     def clear_zones(self):
         self.zones.clear()
         self.zone_names.clear()
         self.zone_rules.clear()
+        self.zone_types.clear()
+
+
+    def get_zone_type(self, zone_index):
+        return self.zone_types.get(zone_index, ZONE_TYPE_CONTROL)
+
+
+    def is_counting_zone(self, zone_index):
+        return self.get_zone_type(zone_index) == ZONE_TYPE_COUNTING
+
 
     def get_rules_for_zone(self, zone_index):
         return self.zone_rules.get(zone_index, [])
+
 
     def add_rule_to_zone(self, zone_index, rule):
         if zone_index not in self.zone_rules:
@@ -61,34 +73,22 @@ class ZoneManager:
 
         intersection_area = (ix2 - ix1) * (iy2 - iy1)
         object_area = w * h
-
-        overlap_ratio = intersection_area / max(object_area, 1)
-
-        return overlap_ratio >= min_ratio
+        return intersection_area / max(object_area, 1) >= min_ratio
 
     def get_all_intersections(self, bbox, min_ratio=0.1):
-        result = []
-        for i in range(len(self.zones)):
-            if self.check_intersection(bbox, i, min_ratio):
-                result.append(i)
-        return result
+        return [i for i in range(len(self.zones)) if self.check_intersection(bbox, i, min_ratio)]
 
     def save_to_file(self, filepath):
-        data = {
-            "camera_id": self.camera_id,
-            "zones": []
-        }
+        data = {"camera_id": self.camera_id, "zones": []}
 
         for i, (x, y, w, h) in enumerate(self.zones):
             name = self.zone_names[i] if i < len(self.zone_names) else f"Зона {i}"
-            rules = []
-            if i in self.zone_rules:
-                rules = [rule.to_dict() for rule in self.zone_rules[i]]
-
+            rules = [rule.to_dict() for rule in self.zone_rules.get(i, [])]
             data["zones"].append({
                 "name": name,
+                "zone_type": self.zone_types.get(i, ZONE_TYPE_CONTROL),
                 "x": x, "y": y, "w": w, "h": h,
-                "rules": rules
+                "rules": rules,
             })
 
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
@@ -108,22 +108,22 @@ class ZoneManager:
             self.zones.clear()
             self.zone_names.clear()
             self.zone_rules.clear()
+            self.zone_types.clear()
 
             for i, zone_data in enumerate(data.get("zones", [])):
-                x = zone_data.get("x", 0)
-                y = zone_data.get("y", 0)
-                w = zone_data.get("w", 0)
-                h = zone_data.get("h", 0)
-                name = zone_data.get("name", f"Зона {len(self.zones)}")
-
-                self.zones.append((x, y, w, h))
-                self.zone_names.append(name)
+                self.zones.append((
+                    zone_data.get("x", 0), zone_data.get("y", 0),
+                    zone_data.get("w", 0), zone_data.get("h", 0),
+                ))
+                self.zone_names.append(zone_data.get("name", f"Зона {i}"))
+                self.zone_types[i] = zone_data.get("zone_type", ZONE_TYPE_CONTROL)
 
                 rules_data = zone_data.get("rules", [])
                 if rules_data:
                     from core.zone_rules import ConditionalRule
                     self.zone_rules[i] = [
-                        ConditionalRule.from_dict(r) if r.get("type") == "conditional" else ZoneRule.from_dict(r)
+                        ConditionalRule.from_dict(r) if r.get("type") == "conditional"
+                        else ZoneRule.from_dict(r)
                         for r in rules_data
                     ]
 

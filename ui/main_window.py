@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime
 
+from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QTextEdit, QLabel, QFileDialog,
@@ -9,7 +10,7 @@ from PyQt6.QtWidgets import (
     QInputDialog, QMessageBox
 )
 
-from output.pdf_report_exporter import export_log_to_pdf
+from output.pdf_report_exporter import export_log_to_pdf, export_stats_to_pdf
 
 from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
@@ -57,8 +58,15 @@ class MainWindow(QMainWindow):
         self.video_thread.alert_signal.connect(self.on_zone_alert)
         self.video_thread.all_frames_ready.connect(self._on_all_frames_ready)
         self.video_thread.camera_status_changed.connect(self._on_camera_status_changed)
+        self.video_thread.stats_updated.connect(self._on_stats_updated)
         self.video_thread.start()
         self._add_log("Система мониторинга запущена")
+
+        # Таймер обновления статистики — раз в 5 секунд, на случай если сигнал не дошёл
+        self._stats_timer = QTimer(self)
+        self._stats_timer.setInterval(5000)
+        self._stats_timer.timeout.connect(self._refresh_stats_label)
+        self._stats_timer.start()
 
         # noinspection PyShadowingNames,PyUnusedLocal
         def _apply_stylesheet(self):
@@ -217,6 +225,21 @@ class MainWindow(QMainWindow):
         zones_group.setLayout(zones_layout)
         panel_layout.addWidget(zones_group)
 
+        stats_group = QGroupBox("Статистика за сеанс")
+        stats_layout = QVBoxLayout()
+        self.stats_label = QLabel("Нет данных")
+        self.stats_label.setWordWrap(True)
+        self.stats_label.setStyleSheet("font-size: 11px; color: #333;")
+        stats_btn_row = QHBoxLayout()
+        self.export_stats_btn = QPushButton("Экспорт PDF")
+        self.reset_stats_btn = QPushButton("Сбросить")
+        stats_btn_row.addWidget(self.export_stats_btn)
+        stats_btn_row.addWidget(self.reset_stats_btn)
+        stats_layout.addWidget(self.stats_label)
+        stats_layout.addLayout(stats_btn_row)
+        stats_group.setLayout(stats_layout)
+        panel_layout.addWidget(stats_group)
+
         log_group = QGroupBox("Журнал событий")
         log_layout = QVBoxLayout()
         self.log_widget = QTextEdit()
@@ -224,10 +247,10 @@ class MainWindow(QMainWindow):
         self.log_widget.setMaximumHeight(250)
         log_layout.addWidget(self.log_widget)
         log_btn_layout = QHBoxLayout()
-        self.clear_log_btn = QPushButton("Очистить")
         self.export_pdf_btn = QPushButton("Экспорт PDF")
-        log_btn_layout.addWidget(self.clear_log_btn)
+        self.clear_log_btn = QPushButton("Очистить")
         log_btn_layout.addWidget(self.export_pdf_btn)
+        log_btn_layout.addWidget(self.clear_log_btn)
         log_layout.addLayout(log_btn_layout)
         log_group.setLayout(log_layout)
         panel_layout.addWidget(log_group)
@@ -247,6 +270,8 @@ class MainWindow(QMainWindow):
         self.clear_zones_btn.clicked.connect(self._clear_zones)
         self.clear_log_btn.clicked.connect(self._clear_log)
         self.export_pdf_btn.clicked.connect(self._export_pdf)
+        self.reset_stats_btn.clicked.connect(self._reset_stats)
+        self.export_stats_btn.clicked.connect(self._export_stats_pdf)
         self.add_camera_btn.clicked.connect(self._add_network_camera)
         self.remove_btn.clicked.connect(self.remove_current_camera)
 
@@ -302,16 +327,15 @@ class MainWindow(QMainWindow):
             f = self.source_manager.get_zones_file(source_id)
             if f and zm.load_from_file(f):
                 self.single_video_widget.set_zones(
-                    zm.zones,
-                    zm.zone_names,
-                    zm.zone_rules
+                    zm.zones, zm.zone_names, zm.zone_rules, zm.zone_types
                 )
-                self.video_thread.update_zones(zm.zones, source_id, zm.zone_names, zm.zone_rules)
+                self.video_thread.update_zones(zm.zones, source_id, zm.zone_names, zm.zone_rules, zm.zone_types)
                 self._add_log(f"Загружено зон: {len(zm.zones)}, правил: {sum(len(r) for r in zm.zone_rules.values())}")
             else:
                 self.single_video_widget.zones.clear()
                 self.single_video_widget.zone_names.clear()
                 self.single_video_widget.zone_rules.clear()
+                self.single_video_widget.zone_types.clear()
                 self.video_thread.update_zones([], source_id)
         self._update_zones_count()
 
@@ -375,8 +399,8 @@ class MainWindow(QMainWindow):
             return
         zm = self.video_thread.get_zone_manager(sid)
         if zm and zm.load_from_file(path):
-            self.single_video_widget.set_zones(zm.zones, zm.zone_names, zm.zone_rules)
-            self.video_thread.update_zones(zm.zones, sid, zm.zone_names, zm.zone_rules)
+            self.single_video_widget.set_zones(zm.zones, zm.zone_names, zm.zone_rules, zm.zone_types)
+            self.video_thread.update_zones(zm.zones, sid, zm.zone_names, zm.zone_rules, zm.zone_types)
             self._update_zones_count()
             self._add_log(f"Загружены зоны из {path}")
 
@@ -389,11 +413,8 @@ class MainWindow(QMainWindow):
             return
         zm = self.video_thread.get_zone_manager(sid)
         if zm:
-            zm.set_zones(
-                self.single_video_widget.zones,
-                self.single_video_widget.zone_names,
-                self.single_video_widget.zone_rules
-            )
+            w = self.single_video_widget
+            zm.set_zones(w.zones, w.zone_names, w.zone_rules, w.zone_types)
             zm.camera_id = sid
             zm.save_to_file(self.source_manager.get_zones_file(sid))
             self._add_log("Зоны и правила сохранены")
@@ -419,10 +440,10 @@ class MainWindow(QMainWindow):
             sid = self.current_source_id
             w = self.single_video_widget
             if zm := self.video_thread.get_zone_manager(sid):
-                zm.set_zones(zones, w.zone_names, w.zone_rules)
+                zm.set_zones(zones, w.zone_names, w.zone_rules, w.zone_types)
                 zm.camera_id = sid
                 zm.save_to_file(self.source_manager.get_zones_file(sid))
-            self.video_thread.update_zones(zones, sid, w.zone_names, w.zone_rules)
+            self.video_thread.update_zones(zones, sid, w.zone_names, w.zone_rules, w.zone_types)
             self._update_zones_count()
 
     def _clear_log(self):
@@ -444,7 +465,12 @@ class MainWindow(QMainWindow):
         src = self.source_manager.get_source(self.current_source_id) if self.current_source_id else None
         camera_name = src.name if src else ""
 
-        ok = export_log_to_pdf(self._log_entries, path, camera_name=camera_name)
+        stats_lines = []
+        if self.current_source_id:
+            stats_lines = self.video_thread.stats_tracker.as_log_lines(self.current_source_id)
+
+        ok = export_log_to_pdf(self._log_entries, path, camera_name=camera_name,
+                               stats_lines=stats_lines)
         if ok:
             self._add_log(f"Отчет сохранен: {os.path.basename(path)}")
             QMessageBox.information(self, "Готово", f"Отчет сохранен:\n{path}")
@@ -542,6 +568,64 @@ class MainWindow(QMainWindow):
 
         full_name = f"{clean_source} - {clean_zone}"
         self.email.send_alert(full_name, clean_class, time_in_zone, frame)
+
+    def _on_stats_updated(self, source_id=None):
+        self._refresh_stats_label()
+
+    def _refresh_stats_label(self):
+        sid = self.current_source_id
+        if not sid:
+            return
+        tracker = self.video_thread.stats_tracker
+        all_stats = tracker.get_all_stats(sid)
+        fmt = tracker.format_duration
+        labels = {"car": "Легковые", "truck": "Грузовые", "bus": "Автобусы", "motorcycle": "Мото"}
+
+        lines = []
+        for zs in sorted(all_stats, key=lambda s: s.zone_index):
+            sm = zs.summary()
+            if sm["total_vehicles"] == 0:
+                continue
+            lines.append(f"<b>{sm['zone_name']}</b>")
+            lines.append(f"Всего ТС: {sm['total_vehicles']}")
+            if sm["avg"] is not None:
+                lines.append(f"Среднее время: {fmt(sm['avg'])}")
+                lines.append(f"Мин: {fmt(sm['min'])}  |  Макс: {fmt(sm['max'])}")
+            for cls, cnt in sm["by_class"].items():
+                lines.append(f"{labels.get(cls, cls)}: {cnt}")
+            lines.append("")
+
+        self.stats_label.setText(
+            "<br>".join(lines).strip() if lines else "Нет завершённых визитов"
+        )
+
+    def _export_stats_pdf(self):
+        sid = self.current_source_id
+        tracker = self.video_thread.stats_tracker
+        if not tracker.get_all_stats(sid):
+            QMessageBox.information(self, "Экспорт", "Нет данных для экспорта. Дождитесь завершения хотя бы одного визита в зоне.")
+            return
+
+        default_name = f"stats_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.pdf"
+        path, _ = QFileDialog.getSaveFileName(self, "Сохранить статистику", default_name, "PDF (*.pdf)")
+        if not path:
+            return
+
+        src = self.source_manager.get_source(sid) if sid else None
+        camera_name = src.name if src else ""
+
+        ok = export_stats_to_pdf(tracker, sid, path, camera_name=camera_name)
+        if ok:
+            self._add_log(f"Статистика сохранена: {os.path.basename(path)}")
+            QMessageBox.information(self, "Готово", f"Статистика сохранена:\n{path}")
+        else:
+            QMessageBox.warning(self, "Ошибка", "Не удалось создать PDF.")
+
+    def _reset_stats(self):
+        sid = self.current_source_id
+        self.video_thread.stats_tracker.reset(sid)
+        self.stats_label.setText("Нет данных")
+        self._add_log("Статистика сброшена")
 
     def _on_camera_status_changed(self, source_id, is_connected):
         """Обновляет текст в комбобоксе: добавляет/убирает индикатор статуса."""

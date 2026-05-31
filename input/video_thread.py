@@ -6,6 +6,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from core.alert_filter import AlertFilter
 from core.detection import MotionDetector
 from core.scenario_analyzer import ScenarioAnalyzer
+from core.stats_tracker import StatsTracker
 from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
 
@@ -15,6 +16,7 @@ class VideoThread(QThread):
     log_signal = pyqtSignal(str)
     alert_signal = pyqtSignal(int, object, int, str, float)
     camera_status_changed = pyqtSignal(int, bool)  # source_id, is_connected
+    stats_updated = pyqtSignal(int)                 # source_id
 
     def __init__(self, source_manager: SourceManager):
         super().__init__()
@@ -44,6 +46,7 @@ class VideoThread(QThread):
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(f"VideoThread: {self.device.upper()}")
         self._source_connected_state = {}  # source_id -> bool, для отслеживания изменений статуса
+        self.stats_tracker = StatsTracker()
 
     def init_source(self, source_id):
         if source_id in self.zone_managers:
@@ -71,10 +74,15 @@ class VideoThread(QThread):
 
         self.frame_counters[source_id] = 0
 
-    def update_zones(self, zones, source_id, zone_names=None, zone_rules=None):
+    def update_zones(self, zones, source_id, zone_names=None, zone_rules=None, zone_types=None):
         if source_id in self.zone_managers:
             zm = self.zone_managers[source_id]
-            zm.set_zones(zones, zone_names, zone_rules if zone_rules is not None else zm.zone_rules)
+            zm.set_zones(
+                zones,
+                zone_names,
+                zone_rules if zone_rules is not None else zm.zone_rules,
+                zone_types if zone_types is not None else zm.zone_types,
+            )
             self.track_zone_time.clear()
             self.rule_last_alert.clear()
 
@@ -135,6 +143,11 @@ class VideoThread(QThread):
                 current_time = time.time()
                 zone_rules = zone_manager.zone_rules
 
+                active_track_ids = {obj['track_id'] for obj in objects if obj.get('track_id') is not None}
+                self.stats_tracker.cleanup_lost_tracks(
+                    source_id, active_track_ids, zone_manager.zone_names, current_time
+                )
+
                 for obj in objects:
                     track_id = obj.get('track_id')
                     zone_index = obj.get('zone_index')
@@ -143,14 +156,20 @@ class VideoThread(QThread):
                         continue
 
                     rules = zone_rules.get(zone_index, [])
-                    if not rules:
-                        continue
+                    is_counting = zone_manager.is_counting_zone(zone_index)
 
                     key = (track_id, zone_index)
 
                     if obj.get('in_zone'):
                         if key not in self.track_zone_time:
                             self.track_zone_time[key] = current_time
+                            # Фиксируем вход для статистики (зоны подсчета активны всегда,
+                            # зоны контроля активны только если есть правила)
+                            if is_counting or rules:
+                                self.stats_tracker.record_entry(
+                                    source_id, track_id, zone_index,
+                                    obj.get('class_name', 'unknown'), current_time
+                                )
 
                         time_in_zone = current_time - self.track_zone_time[key]
 
@@ -203,7 +222,21 @@ class VideoThread(QThread):
                                 self.alert_signal.emit(zone_index, annotated_frame.copy(), source_id, class_name,
                                                        time_in_zone)
                     else:
-                        self.track_zone_time.pop(key, None)
+                        if key in self.track_zone_time:
+                            self.track_zone_time.pop(key)
+                            if is_counting or rules:
+                                zone_name = (
+                                    zone_manager.zone_names[zone_index]
+                                    if zone_index < len(zone_manager.zone_names)
+                                    else f"Зона {zone_index}"
+                                )
+                                self.stats_tracker.record_exit(
+                                    source_id, track_id, zone_index, zone_name, current_time
+                                )
+                                self.stats_updated.emit(source_id)
+
+                    if not rules:
+                        continue
 
                 active_zones = {obj['zone_index'] for obj in objects if
                                 obj.get('in_zone') and obj.get('zone_index') is not None}

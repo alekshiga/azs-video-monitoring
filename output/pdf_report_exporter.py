@@ -30,7 +30,8 @@ def _register_fonts():
     return "Helvetica", "Helvetica-Bold"
 
 
-def export_log_to_pdf(log_entries: list[str], filepath: str, camera_name: str = "") -> bool:
+def export_log_to_pdf(log_entries: list[str], filepath: str, camera_name: str = "",
+                      stats_lines: list[str] = None) -> bool:
     """
     :param log_entries: список строк вида "[HH:MM:SS] текст"
     :param filepath: путь к выходному .pdf файлу
@@ -122,6 +123,50 @@ def export_log_to_pdf(log_entries: list[str], filepath: str, camera_name: str = 
                 safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 story.append(Paragraph(safe, style))
 
+        # Секция статистики
+        if stats_lines:
+            story.append(Spacer(1, 6 * mm))
+            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cccccc")))
+            story.append(Spacer(1, 4 * mm))
+
+            section_style = ParagraphStyle(
+                "Section",
+                fontName=font_bold,
+                fontSize=12,
+                leading=16,
+                spaceAfter=6,
+            )
+            stats_head_style = ParagraphStyle(
+                "StatsHead",
+                fontName=font_bold,
+                fontSize=9,
+                leading=13,
+                spaceAfter=1,
+                textColor=colors.HexColor("#1a6a9a"),
+            )
+            stats_val_style = ParagraphStyle(
+                "StatsVal",
+                fontName=font_name,
+                fontSize=9,
+                leading=13,
+                spaceAfter=1,
+                leftIndent=10,
+            )
+
+            story.append(Paragraph("Статистика транспортного потока", section_style))
+
+            for line in stats_lines:
+                text = line.strip()
+                if not text:
+                    story.append(Spacer(1, 3 * mm))
+                    continue
+                safe = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                # Строки с "Зона:" или начинающиеся с "Статистика" выделяем
+                if text.startswith("Зона:") or text.startswith("Статистика"):
+                    story.append(Paragraph(safe, stats_head_style))
+                else:
+                    story.append(Paragraph(safe, stats_val_style))
+
         story.append(Spacer(1, 8 * mm))
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#cccccc")))
         story.append(Spacer(1, 3 * mm))
@@ -148,4 +193,93 @@ def export_log_to_pdf(log_entries: list[str], filepath: str, camera_name: str = 
 
     except Exception as e:
         print(f"Ошибка экспорта PDF: {e}")
+        return False
+
+
+def export_stats_to_pdf(stats_tracker, source_id, filepath: str, camera_name: str = "") -> bool:
+    """
+    Экспортирует только статистику транспортного потока (для дальшейшего улучшения бизнес-процессов)
+    """
+    try:
+        font_name, font_bold = _register_fonts()
+
+        doc = SimpleDocTemplate(
+            filepath,
+            pagesize=A4,
+            leftMargin=20 * mm, rightMargin=20 * mm,
+            topMargin=20 * mm, bottomMargin=20 * mm,
+        )
+
+        title_style = ParagraphStyle("T", fontName=font_bold, fontSize=16, leading=22, spaceAfter=4)
+        subtitle_style = ParagraphStyle("S", fontName=font_name, fontSize=10,
+                                        textColor=colors.HexColor("#555555"), spaceAfter=10)
+        zone_style = ParagraphStyle("Z", fontName=font_bold, fontSize=11, leading=16,
+                                    textColor=colors.HexColor("#1a6a9a"), spaceBefore=8, spaceAfter=3)
+        row_style = ParagraphStyle("R", fontName=font_name, fontSize=9, leading=14,
+                                   leftIndent=12, spaceAfter=1)
+        row_bold_style = ParagraphStyle("RB", fontName=font_bold, fontSize=10, leading=14,
+                                        leftIndent=12, spaceAfter=1)
+        empty_style = ParagraphStyle("E", fontName=font_name, fontSize=9,
+                                     textColor=colors.HexColor("#999999"))
+        footer_style = ParagraphStyle("F", fontName=font_name, fontSize=8,
+                                      textColor=colors.HexColor("#888888"))
+
+        CLASS_LABELS = {"car": "Легковые", "truck": "Грузовые",
+                        "bus": "Автобусы", "motorcycle": "Мотоциклы"}
+
+        story = []
+
+        story.append(Paragraph("Статистика транспортного потока", title_style))
+        generated_at = datetime.now().strftime("%d.%m.%Y в %H:%M")
+        since = stats_tracker.session_start.strftime("%d.%m.%Y %H:%M")
+        parts = [f"Сформирован {generated_at}", f"Данные с {since}"]
+        if camera_name:
+            parts.insert(0, f"Объект: {camera_name}")
+        story.append(Paragraph("   |   ".join(parts), subtitle_style))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#cccccc")))
+        story.append(Spacer(1, 5 * mm))
+
+        fmt = stats_tracker.format_duration
+        all_stats = sorted(stats_tracker.get_all_stats(source_id), key=lambda s: s.zone_index)
+
+        if not all_stats or all(s.count() == 0 for s in all_stats):
+            story.append(Paragraph("Нет данных о завершенных визитах за текущий сеанс.", empty_style))
+        else:
+            total_vehicles = 0
+            for zs in all_stats:
+                sm = zs.summary()
+                if sm["total_vehicles"] == 0:
+                    continue
+                total_vehicles += sm["total_vehicles"]
+
+                safe_name = zs.zone_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                story.append(Paragraph(f"Зона: {safe_name}", zone_style))
+
+                story.append(Paragraph(f"Всего транспортных средств: {sm['total_vehicles']}", row_bold_style))
+
+                if sm["avg"] is not None:
+                    story.append(Paragraph(f"Среднее время в зоне: {fmt(sm['avg'])}", row_bold_style))
+                    story.append(Paragraph(f"Минимальное: {fmt(sm['min'])}", row_style))
+                    story.append(Paragraph(f"Максимальное: {fmt(sm['max'])}", row_style))
+
+                for cls, cnt in sm["by_class"].items():
+                    label = CLASS_LABELS.get(cls, cls)
+                    story.append(Paragraph(f"{label}: {cnt} шт.", row_style))
+
+                story.append(Spacer(1, 3 * mm))
+
+            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#cccccc")))
+            story.append(Spacer(1, 3 * mm))
+            story.append(Paragraph(f"Итого за смену: {total_vehicles} транспортных средств", row_bold_style))
+
+        story.append(Spacer(1, 8 * mm))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor("#eeeeee")))
+        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(f"Отчет сформирован автоматически системой мониторинга", footer_style))
+
+        doc.build(story)
+        return True
+
+    except Exception as e:
+        print(f"Ошибка экспорта статистики PDF: {e}")
         return False

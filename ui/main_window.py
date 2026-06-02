@@ -7,10 +7,11 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QTextEdit, QLabel, QFileDialog,
     QGroupBox, QScrollArea, QCheckBox, QComboBox,
-    QInputDialog, QMessageBox
+    QInputDialog, QMessageBox, QTabWidget
 )
 
 from output.pdf_report_exporter import export_log_to_pdf, export_stats_to_pdf
+from output.incident_storage import save_snapshot
 
 from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
@@ -19,6 +20,7 @@ from output.email_notifier import EmailNotifier
 from ui.image_stitching import ImageStitcher
 from ui.video_widget import VideoWidget
 from ui.rule_dialog import ZoneRulesDialog
+from ui.alerts_widget import AlertsWidget
 
 
 class MainWindow(QMainWindow):
@@ -66,6 +68,7 @@ class MainWindow(QMainWindow):
         self._stats_timer = QTimer(self)
         self._stats_timer.setInterval(5000)
         self._stats_timer.timeout.connect(self._refresh_stats_label)
+        self._stats_timer.timeout.connect(self._update_alerts_tab_title)
         self._stats_timer.start()
 
         # noinspection PyShadowingNames,PyUnusedLocal
@@ -141,11 +144,14 @@ class MainWindow(QMainWindow):
             """)
 
     def _setup_ui(self):
-        central = QWidget()
-        self.setCentralWidget(central)
+        # Корневой контейнер с вкладками: «Главная» и «Тревоги»
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+
+        main_tab = QWidget()
         outer_layout = QVBoxLayout()
         outer_layout.setSpacing(5)
-        central.setLayout(outer_layout)
+        main_tab.setLayout(outer_layout)
 
         top_layout = QHBoxLayout()
         top_layout.setSpacing(8)
@@ -261,6 +267,15 @@ class MainWindow(QMainWindow):
         scroll_area.setWidget(panel_content)
         top_layout.addWidget(scroll_area)
         outer_layout.addLayout(top_layout)
+
+        # Вкладка «Главная»
+        self.tabs.addTab(main_tab, "Главная")
+
+        # Вкладка «Тревоги»
+        self.alerts_widget = AlertsWidget(self.video_thread.db)
+        self.alerts_widget.alerts_changed.connect(self._update_alerts_tab_title)
+        self._alerts_tab_index = self.tabs.addTab(self.alerts_widget, "Тревоги")
+        self._update_alerts_tab_title()
 
     def _connect_signals(self):
         self.single_mode_btn.clicked.connect(self._set_single_mode)
@@ -570,6 +585,30 @@ class MainWindow(QMainWindow):
         full_name = f"{clean_source} - {clean_zone}"
         self.email.send_alert(full_name, clean_class, time_in_zone, frame)
 
+        # Жизненный цикл тревоги
+        snapshot_path = save_snapshot(frame, source_id, zone_index)
+        display_zone = zone_name or f"Зона {zone_index}"
+        camera_disp = src.name if src else f"Камера {source_id}"
+        self.video_thread.db.insert_alert(
+            source_id=source_id,
+            camera_name=camera_disp,
+            zone_index=zone_index,
+            zone_name=display_zone,
+            class_name=class_name,
+            message=class_name,
+            time_in_zone=time_in_zone,
+            snapshot=snapshot_path,
+        )
+        self._add_log(f"ТРЕВОГА: {camera_disp} / {display_zone} — {class_name}")
+        self.alerts_widget.refresh()
+
+    def _update_alerts_tab_title(self):
+        if not hasattr(self, "_alerts_tab_index"):
+            return
+        new = self.alerts_widget.new_count()
+        title = f"Тревоги ({new})" if new else "Тревоги"
+        self.tabs.setTabText(self._alerts_tab_index, title)
+
     def _on_stats_updated(self, source_id=None):
         self._refresh_stats_label()
 
@@ -609,7 +648,7 @@ class MainWindow(QMainWindow):
         sid = self.current_source_id
         tracker = self.video_thread.stats_tracker
         if not tracker.get_all_stats(sid):
-            QMessageBox.information(self, "Экспорт", "Нет данных для экспорта. Дождитесь завершения хотя бы одного визита в зоне.")
+            QMessageBox.information(self, "Экспорт", "Нет данных для экспорта.")
             return
 
         default_name = f"stats_{datetime.now().strftime('%Y-%m-%d_%H-%M')}.pdf"
@@ -634,7 +673,7 @@ class MainWindow(QMainWindow):
         self._add_log("Статистика сброшена")
 
     def _on_camera_status_changed(self, source_id, is_connected):
-        """Обновляет текст в комбобоксе: добавляет/убирает индикатор статуса."""
+        """Индикатор статуса источника"""
         for i in range(self.source_combo.count()):
             if self.source_combo.itemData(i) == source_id:
                 src = self.source_manager.get_source(source_id)

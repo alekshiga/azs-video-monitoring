@@ -62,8 +62,27 @@ class Database:
                     created_at  TEXT DEFAULT (datetime('now','localtime'))
                 );
 
+                CREATE TABLE IF NOT EXISTS alerts (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_id    INTEGER,
+                    camera_name  TEXT,
+                    zone_index   INTEGER,
+                    zone_name    TEXT,
+                    class_name   TEXT,
+                    message      TEXT,
+                    time_in_zone REAL,
+                    snapshot     TEXT,
+                    status       TEXT DEFAULT 'new',   -- new / acknowledged / resolved
+                    ts           REAL,
+                    alert_dt     TEXT,
+                    ack_dt       TEXT,
+                    resolved_dt  TEXT,
+                    created_at   TEXT DEFAULT (datetime('now','localtime'))
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_visits_src ON visits(source_id, zone_index);
                 CREATE INDEX IF NOT EXISTS idx_events_src ON events(source_id, zone_index, event_type);
+                CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
             """)
             self._conn.commit()
 
@@ -154,6 +173,78 @@ class Database:
         with self._lock:
             rows = self._conn.execute(q, params).fetchall()
         return [dict(r) for r in rows]
+
+
+    def insert_alert(self, source_id, camera_name, zone_index, zone_name,
+                     class_name=None, message=None, time_in_zone=None,
+                     snapshot=None, ts=None) -> Optional[int]:
+        """
+        Создаёт тревогу со статусом new
+        """
+        ts = ts if ts is not None else time.time()
+        alert_dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "INSERT INTO alerts (source_id, camera_name, zone_index, zone_name, "
+                    "class_name, message, time_in_zone, snapshot, status, ts, alert_dt) "
+                    "VALUES (?,?,?,?,?,?,?,?,'new',?,?)",
+                    (source_id, camera_name, zone_index, zone_name, class_name,
+                     message, time_in_zone, snapshot, ts, alert_dt),
+                )
+                self._conn.commit()
+                return cur.lastrowid
+        except Exception as e:
+            print(f"[DB] Ошибка записи тревоги: {e}")
+            return None
+
+    def get_alerts(self, status: Optional[str] = None, source_id=None,
+                   limit: int = 300) -> list[dict]:
+        """
+        Список всех тревог + можно фильтровать по статусу
+        """
+        q = "SELECT * FROM alerts"
+        conds, params = [], []
+        if status:
+            conds.append("status=?"); params.append(status)
+        if source_id is not None:
+            conds.append("source_id=?"); params.append(source_id)
+        if conds:
+            q += " WHERE " + " AND ".join(conds)
+        q += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_alert_status(self, alert_id: int, status: str) -> None:
+        """
+        Меняет статус тревоги и фиксирует время
+        """
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        col = {"acknowledged": "ack_dt", "resolved": "resolved_dt"}.get(status)
+        try:
+            with self._lock:
+                if col:
+                    self._conn.execute(
+                        f"UPDATE alerts SET status=?, {col}=? WHERE id=?",
+                        (status, now, alert_id),
+                    )
+                else:
+                    self._conn.execute(
+                        "UPDATE alerts SET status=? WHERE id=?", (status, alert_id),
+                    )
+                self._conn.commit()
+        except Exception as e:
+            print(f"[DB] Ошибка обновления тревоги: {e}")
+
+    def count_alerts(self, status: Optional[str] = None) -> int:
+        q = "SELECT COUNT(*) FROM alerts"
+        params = []
+        if status:
+            q += " WHERE status=?"; params.append(status)
+        with self._lock:
+            return self._conn.execute(q, params).fetchone()[0]
 
     def recent_events(self, source_id, limit: int = 100) -> list[dict]:
         with self._lock:

@@ -338,21 +338,27 @@ class MainWindow(QMainWindow):
         self._load_zones_for_source(source_id)
 
     def _load_zones_for_source(self, source_id):
-        zm = self.video_thread.get_zone_manager(source_id)
-        if zm:
-            f = self.source_manager.get_zones_file(source_id)
-            if f and zm.load_from_file(f):
-                self.single_video_widget.set_zones(
-                    zm.zones, zm.zone_names, zm.zone_rules, zm.zone_types
-                )
-                self.video_thread.update_zones(zm.zones, source_id, zm.zone_names, zm.zone_rules, zm.zone_types)
-                self._add_log(f"Загружено зон: {len(zm.zones)}, правил: {sum(len(r) for r in zm.zone_rules.values())}")
-            else:
-                self.single_video_widget.zones.clear()
-                self.single_video_widget.zone_names.clear()
-                self.single_video_widget.zone_rules.clear()
-                self.single_video_widget.zone_types.clear()
-                self.video_thread.update_zones([], source_id)
+        f = self.source_manager.get_zones_file(source_id)
+
+        zm = self.video_thread.get_zone_manager(source_id) or ZoneManager()
+
+        if f and zm.load_from_file(f):
+            self.single_video_widget.set_zones(
+                zm.zones, zm.zone_names, zm.zone_rules, zm.zone_types
+            )
+            self.video_thread.update_zones(
+                zm.zones, source_id, zm.zone_names, zm.zone_rules, zm.zone_types
+            )
+            self._add_log(
+                f"Загружено зон: {len(zm.zones)}, "
+                f"правил: {sum(len(r) for r in zm.zone_rules.values())}"
+            )
+        else:
+            self.single_video_widget.zones.clear()
+            self.single_video_widget.zone_names.clear()
+            self.single_video_widget.zone_rules.clear()
+            self.single_video_widget.zone_types.clear()
+            self.video_thread.update_zones([], source_id)
         self._update_zones_count()
 
     def _add_network_camera(self):

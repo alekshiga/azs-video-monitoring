@@ -1,25 +1,18 @@
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QComboBox, QSpinBox, QCheckBox, QTabWidget, QWidget,
-    QListWidget, QListWidgetItem, QMessageBox, QGroupBox
+    QListWidget, QListWidgetItem, QMessageBox, QGroupBox, QRadioButton
 )
 from PyQt6.QtCore import Qt
-from core.zone_rules import ZoneRule, ConditionalRule
-
-
-CONDITION_LABELS = {
-    "has_person_no_car": "Человек есть, машины нет",
-    "has_car_no_person": "Машина есть, человека нет",
-    "has_both": "Есть и машина, и человек",
-}
-CONDITION_KEYS = {v: k for k, v in CONDITION_LABELS.items()}
+from core.zone_rules import (
+    ZoneRule, ConditionalRule, CONDITION_PRESETS, PRESENCE_CLASS_LABELS
+)
 
 
 def rule_to_text(rule):
     if isinstance(rule, ConditionalRule):
-        label = CONDITION_LABELS.get(rule.condition, rule.condition)
         status = "" if rule.enabled else " [откл]"
-        return f"[Ситуация] {label} — {rule.duration}с, кулдаун {rule.cooldown}с{status}"
+        return f"[Ситуация] {rule.describe()} — дольше {rule.duration}с, кулдаун {rule.cooldown}с{status}"
     else:
         label = ZoneRule.CLASS_LABELS.get(rule.class_name, rule.class_name)
         status = "" if rule.enabled else " [откл]"
@@ -27,60 +20,24 @@ def rule_to_text(rule):
 
 
 class AddRuleDialog(QDialog):
-    """Диалог добавления одного правила"""
+    """Диалог добавления/редактирования одного правила."""
 
     def __init__(self, parent=None, existing_rule=None):
         super().__init__(parent)
         self.setWindowTitle("Добавить правило")
-        self.setMinimumWidth(400)
+        self.setMinimumWidth(440)
 
         layout = QVBoxLayout()
-
         self.tabs = QTabWidget()
 
-        simple_tab = QWidget()
-        simple_layout = QVBoxLayout()
-
-        # Правило по типу объекта
-        simple_layout.addWidget(QLabel("Тип объекта:"))
-        self.class_combo = QComboBox()
-        for key, label in ZoneRule.CLASS_LABELS.items():
-            self.class_combo.addItem(label, key)
-        simple_layout.addWidget(self.class_combo)
-
-        simple_layout.addWidget(QLabel("Минимальное время в зоне (сек):"))
-        self.time_spin = QSpinBox()
-        self.time_spin.setRange(0, 3600)
-        self.time_spin.setValue(5)
-        simple_layout.addWidget(self.time_spin)
-
-        simple_tab.setLayout(simple_layout)
-        self.tabs.addTab(simple_tab, "По классу объекта")
-
-        # Ситуативные правила
-        cond_tab = QWidget()
-        cond_layout = QVBoxLayout()
-
-        cond_layout.addWidget(QLabel("Ситуация в зоне:"))
-        self.condition_combo = QComboBox()
-        for label in CONDITION_LABELS.values():
-            self.condition_combo.addItem(label)
-        cond_layout.addWidget(self.condition_combo)
-
-        cond_layout.addWidget(QLabel("Длительность выполнения условия (сек):"))
-        self.duration_spin = QSpinBox()
-        self.duration_spin.setRange(0, 3600)
-        self.duration_spin.setValue(5)
-        cond_layout.addWidget(self.duration_spin)
-
-        cond_tab.setLayout(cond_layout)
-        self.tabs.addTab(cond_tab, "По ситуации (машина/человек)")
-
+        self._build_simple_tab()
+        self._build_conditional_tab()
         layout.addWidget(self.tabs)
 
+        # Общие параметры
         layout.addWidget(QLabel("Задержка между уведомлениями (сек):"))
         self.cooldown_spin = QSpinBox()
-        self.cooldown_spin.setRange(10, 3600)
+        self.cooldown_spin.setRange(5, 3600)
         self.cooldown_spin.setValue(60)
         layout.addWidget(self.cooldown_spin)
 
@@ -89,11 +46,11 @@ class AddRuleDialog(QDialog):
         layout.addWidget(self.enabled_cb)
 
         btn_layout = QHBoxLayout()
-        save_btn = QPushButton("Добавить")
-        save_btn.clicked.connect(self.accept)
+        self.save_btn = QPushButton("Добавить")
+        self.save_btn.clicked.connect(self.accept)
         cancel_btn = QPushButton("Отмена")
         cancel_btn.clicked.connect(self.reject)
-        btn_layout.addWidget(save_btn)
+        btn_layout.addWidget(self.save_btn)
         btn_layout.addWidget(cancel_btn)
         layout.addLayout(btn_layout)
 
@@ -102,21 +59,137 @@ class AddRuleDialog(QDialog):
         if existing_rule:
             self._load_rule(existing_rule)
 
+
+    def _build_simple_tab(self):
+        tab = QWidget()
+        lay = QVBoxLayout()
+        lay.addWidget(QLabel("Тип объекта:"))
+        self.class_combo = QComboBox()
+        for key, label in ZoneRule.CLASS_LABELS.items():
+            self.class_combo.addItem(label, key)
+        lay.addWidget(self.class_combo)
+
+        lay.addWidget(QLabel("Минимальное время в зоне (сек):"))
+        self.time_spin = QSpinBox()
+        self.time_spin.setRange(0, 3600)
+        self.time_spin.setValue(5)
+        lay.addWidget(self.time_spin)
+        lay.addStretch()
+        tab.setLayout(lay)
+        self.tabs.addTab(tab, "По типу объекта")
+
+
+    def _build_conditional_tab(self):
+        tab = QWidget()
+        lay = QVBoxLayout()
+
+        preset_group = QGroupBox("Готовый сценарий")
+        pg = QVBoxLayout()
+        pg.addWidget(QLabel("Выберите типичную ситуацию:"))
+        self.preset_combo = QComboBox()
+        self.preset_combo.addItem("— Свой вариант —", None)
+        for name in CONDITION_PRESETS:
+            self.preset_combo.addItem(name, name)
+        self.preset_combo.currentIndexChanged.connect(self._apply_preset)
+        pg.addWidget(self.preset_combo)
+        preset_group.setLayout(pg)
+        lay.addWidget(preset_group)
+
+        manual_group = QGroupBox("Условия (что должно быть в зоне)")
+        mg = QVBoxLayout()
+
+        row1 = QHBoxLayout()
+        self.cond1_class = QComboBox()
+        for key, label in PRESENCE_CLASS_LABELS.items():
+            self.cond1_class.addItem(label, key)
+        self.cond1_state = QComboBox()
+        self.cond1_state.addItem("присутствует", True)
+        self.cond1_state.addItem("отсутствует", False)
+        row1.addWidget(self.cond1_class)
+        row1.addWidget(self.cond1_state)
+        mg.addLayout(row1)
+
+        logic_row = QHBoxLayout()
+        self.rb_and = QRadioButton("И (оба условия)")
+        self.rb_or = QRadioButton("ИЛИ (хотя бы одно)")
+        self.rb_and.setChecked(True)
+        logic_row.addWidget(self.rb_and)
+        logic_row.addWidget(self.rb_or)
+        mg.addLayout(logic_row)
+
+        self.cond2_enabled = QCheckBox("Добавить второе условие")
+        self.cond2_enabled.setChecked(True)
+        mg.addWidget(self.cond2_enabled)
+        row2 = QHBoxLayout()
+        self.cond2_class = QComboBox()
+        for key, label in PRESENCE_CLASS_LABELS.items():
+            self.cond2_class.addItem(label, key)
+        self.cond2_state = QComboBox()
+        self.cond2_state.addItem("присутствует", True)
+        self.cond2_state.addItem("отсутствует", False)
+        row2.addWidget(self.cond2_class)
+        row2.addWidget(self.cond2_state)
+        mg.addLayout(row2)
+
+        manual_group.setLayout(mg)
+        lay.addWidget(manual_group)
+
+        lay.addWidget(QLabel("Условие должно держаться дольше (сек):"))
+        self.duration_spin = QSpinBox()
+        self.duration_spin.setRange(0, 3600)
+        self.duration_spin.setValue(5)
+        lay.addWidget(self.duration_spin)
+
+        lay.addStretch()
+        tab.setLayout(lay)
+        self.tabs.addTab(tab, "По ситуации (машина/человек)")
+
+        self.preset_combo.setCurrentIndex(1)
+
+    def _apply_preset(self):
+        name = self.preset_combo.currentData()
+        if not name:
+            return
+        conditions, logic = CONDITION_PRESETS[name]
+        # первое условие
+        self._set_combo_data(self.cond1_class, conditions[0][0])
+        self._set_combo_data(self.cond1_state, conditions[0][1])
+        # второе условие
+        if len(conditions) > 1:
+            self.cond2_enabled.setChecked(True)
+            self._set_combo_data(self.cond2_class, conditions[1][0])
+            self._set_combo_data(self.cond2_state, conditions[1][1])
+        else:
+            self.cond2_enabled.setChecked(False)
+        (self.rb_and if logic == "and" else self.rb_or).setChecked(True)
+
+    @staticmethod
+    def _set_combo_data(combo, value):
+        idx = combo.findData(value)
+        if idx >= 0:
+            combo.setCurrentIndex(idx)
+
     def _load_rule(self, rule):
         if isinstance(rule, ConditionalRule):
             self.tabs.setCurrentIndex(1)
-            label = CONDITION_LABELS.get(rule.condition, "")
-            idx = self.condition_combo.findText(label)
-            if idx >= 0:
-                self.condition_combo.setCurrentIndex(idx)
+            self.preset_combo.setCurrentIndex(0)
+            conds = rule.conditions
+            if conds:
+                self._set_combo_data(self.cond1_class, conds[0]["class"])
+                self._set_combo_data(self.cond1_state, conds[0]["present"])
+            if len(conds) > 1:
+                self.cond2_enabled.setChecked(True)
+                self._set_combo_data(self.cond2_class, conds[1]["class"])
+                self._set_combo_data(self.cond2_state, conds[1]["present"])
+            else:
+                self.cond2_enabled.setChecked(False)
+            (self.rb_and if rule.logic == "and" else self.rb_or).setChecked(True)
             self.duration_spin.setValue(rule.duration)
             self.cooldown_spin.setValue(rule.cooldown)
             self.enabled_cb.setChecked(rule.enabled)
         else:
             self.tabs.setCurrentIndex(0)
-            idx = self.class_combo.findData(rule.class_name)
-            if idx >= 0:
-                self.class_combo.setCurrentIndex(idx)
+            self._set_combo_data(self.class_combo, rule.class_name)
             self.time_spin.setValue(rule.min_time)
             self.cooldown_spin.setValue(rule.cooldown)
             self.enabled_cb.setChecked(rule.enabled)
@@ -130,10 +203,13 @@ class AddRuleDialog(QDialog):
                 enabled=self.enabled_cb.isChecked(),
             )
         else:
-            label = self.condition_combo.currentText()
-            condition = CONDITION_KEYS.get(label, "has_person_no_car")
+            conditions = [(self.cond1_class.currentData(), self.cond1_state.currentData())]
+            if self.cond2_enabled.isChecked():
+                conditions.append((self.cond2_class.currentData(), self.cond2_state.currentData()))
+            logic = "and" if self.rb_and.isChecked() else "or"
             return ConditionalRule(
-                condition=condition,
+                conditions=conditions,
+                logic=logic,
                 duration=self.duration_spin.value(),
                 cooldown=self.cooldown_spin.value(),
                 enabled=self.enabled_cb.isChecked(),
@@ -141,12 +217,12 @@ class AddRuleDialog(QDialog):
 
 
 class ZoneRulesDialog(QDialog):
-    """Диалог управления правилами одной зоны - список + добавление/удаление"""
+    """Диалог управления правилами одной зоны - список + добавление/удаление."""
 
     def __init__(self, parent=None, zone_name="Зона", rules=None):
         super().__init__(parent)
         self.setWindowTitle(f"Правила зоны: {zone_name}")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(520)
         self.setMinimumHeight(320)
 
         self.rules = list(rules) if rules else []
@@ -212,10 +288,7 @@ class ZoneRulesDialog(QDialog):
         row = self.list_widget.row(item)
         dlg = AddRuleDialog(self, existing_rule=self.rules[row])
         dlg.setWindowTitle("Редактировать правило")
-        
-        for btn in dlg.findChildren(QPushButton):
-            if btn.text() == "Добавить":
-                btn.setText("Сохранить")
+        dlg.save_btn.setText("Сохранить")
         if dlg.exec():
             self.rules[row] = dlg.get_rule()
             self._refresh_list()

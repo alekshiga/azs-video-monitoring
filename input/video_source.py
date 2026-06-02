@@ -1,7 +1,16 @@
+import os
 import cv2
 import threading
 import time
 from collections import deque
+
+# RTSP поверх TCP (надёжнее UDP — кадры не рассыпаются при потере пакетов) и
+# таймаут на чтение/открытие, чтобы при обрыве связи поток не зависал намертво.
+# Должно быть установлено до создания cv2.VideoCapture для RTSP.
+os.environ.setdefault(
+    "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+    "rtsp_transport;tcp|stimeout;5000000"
+)
 
 
 class VideoSource:
@@ -28,7 +37,8 @@ class VideoSource:
                 self.cap = cv2.VideoCapture(self.source_path)
                 print(f"[{self.name}] Подключение к USB камере (индекс: {self.source_path})")
             elif isinstance(self.source_path, str) and self.source_path.startswith("rtsp://"):
-                self.cap = cv2.VideoCapture(self.source_path)
+                # Явно через FFmpeg-бэкенд (учитывает OPENCV_FFMPEG_CAPTURE_OPTIONS выше)
+                self.cap = cv2.VideoCapture(self.source_path, cv2.CAP_FFMPEG)
                 print(f"[{self.name}] Подключение к IP-камере (RTSP): {self.source_path[:50]}...")
             elif isinstance(self.source_path, str) and self.source_path.endswith(('.mp4', '.avi', '.mov', '.mkv')):
                 self.cap = cv2.VideoCapture(self.source_path)

@@ -7,7 +7,7 @@ from core.alert_filter import AlertFilter
 from core.database import Database
 from core.detection import MotionDetector
 from core.scenario_analyzer import ScenarioAnalyzer
-from core.stats_tracker import StatsTracker
+from core.stats_tracker import StatsTracker, VEHICLE_CLASSES
 from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
 
@@ -62,7 +62,15 @@ class VideoThread(QThread):
                 watched_classes=self.watched_classes
             )
 
-        self.zone_managers[source_id] = ZoneManager()
+        zm = ZoneManager()
+        zones_file = self.source_manager.get_zones_file(source_id)
+        if zones_file and zm.load_from_file(zones_file):
+            self.log_signal.emit(
+                f"Камера {source_id}: автозагружено зон {len(zm.zones)}, "
+                f"правил {sum(len(r) for r in zm.zone_rules.values())}"
+            )
+        self.zone_managers[source_id] = zm
+
         self.alert_filters[source_id] = AlertFilter(
             min_presence_time=self.min_presence_time,
             alert_cooldown=self.alert_cooldown,
@@ -194,28 +202,23 @@ class VideoThread(QThread):
                             if not rule.enabled:
                                 continue
 
-                            if hasattr(rule, 'condition'):
-                                has_car = any(
-                                    o.get('class_name') == 'car' and o.get('zone_index') == zone_index for o in objects)
-                                has_person = any(
-                                    o.get('class_name') == 'person' and o.get('zone_index') == zone_index for o in
-                                    objects)
-
-                                # Условие выполнено и прошло заданное время, значит это нарушение
-                                if not rule.check(has_car, has_person, time_in_zone):
+                            if getattr(rule, 'is_conditional', False):
+                                present_classes = set()
+                                for o in objects:
+                                    if o.get('zone_index') != zone_index:
+                                        continue
+                                    cn = o.get('class_name')
+                                    if cn:
+                                        present_classes.add(cn)
+                                    if cn in VEHICLE_CLASSES:
+                                        present_classes.add('vehicle')
+                                if not rule.check(present_classes, time_in_zone):
                                     continue
 
                                 obj['is_violation'] = True
+                                message = rule.describe()
 
-                                messages = {
-                                    "has_person_no_car": "Человек без машины",
-                                    "has_car_no_person": "Машина без человека",
-                                    "has_both": "Машина и человек в зоне",
-                                    "has_none": "Зона пуста"
-                                }
-                                message = messages.get(rule.condition, "Условие выполнено")
-
-                                alert_key = (zone_index, rule.condition)
+                                alert_key = (zone_index, 'cond', rule.describe(), rule.logic)
                                 if current_time - self.rule_last_alert.get(alert_key, 0) < rule.cooldown:
                                     continue
                                 self.rule_last_alert[alert_key] = current_time

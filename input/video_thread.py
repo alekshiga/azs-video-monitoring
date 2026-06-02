@@ -145,12 +145,24 @@ class VideoThread(QThread):
                 current_time = time.time()
                 zone_rules = zone_manager.zone_rules
 
-                active_track_ids = {obj['track_id'] for obj in objects if obj.get('track_id') is not None}
-                self.stats_tracker.cleanup_lost_tracks(
-                    source_id, active_track_ids, zone_manager.zone_names, current_time
-                )
+                present_keys = {
+                    (obj['track_id'], obj['zone_index'])
+                    for obj in objects
+                    if obj.get('track_id') is not None
+                    and obj.get('zone_index') is not None
+                    and obj.get('in_zone')
+                    and zone_manager.is_counting_zone(obj['zone_index'])
+                }
+
+                def zone_name_of(zi):
+                    return (zone_manager.zone_names[zi]
+                            if zi is not None and zi < len(zone_manager.zone_names)
+                            else f"Зона {zi}")
+
+                pending_alerts = []
 
                 for obj in objects:
+                    obj['is_violation'] = False  # по умолчанию нарушения нет
                     track_id = obj.get('track_id')
                     zone_index = obj.get('zone_index')
 
@@ -165,19 +177,16 @@ class VideoThread(QThread):
                     if obj.get('in_zone'):
                         if key not in self.track_zone_time:
                             self.track_zone_time[key] = current_time
-                            # Фиксируем вход для статистики (зоны подсчета активны всегда,
-                            # зоны контроля активны только если есть правила)
-                            if is_counting or rules:
-                                entry_zone_name = (
-                                    zone_manager.zone_names[zone_index]
-                                    if zone_index < len(zone_manager.zone_names)
-                                    else f"Зона {zone_index}"
-                                )
+                            # Конверсия и визиты считаются ТОЛЬКО в зоне подсчёта.
+                            # Зоны контроля дают только тревоги, в статистику потока
+                            # они не идут (иначе транзитный транспорт портит конверсию).
+                            if is_counting:
                                 self.stats_tracker.record_entry(
                                     source_id, track_id, zone_index,
                                     obj.get('class_name', 'unknown'), current_time,
-                                    zone_name=entry_zone_name,
+                                    zone_name=zone_name_of(zone_index),
                                 )
+                                self.stats_updated.emit(source_id)
 
                         time_in_zone = current_time - self.track_zone_time[key]
 
@@ -192,31 +201,30 @@ class VideoThread(QThread):
                                     o.get('class_name') == 'person' and o.get('zone_index') == zone_index for o in
                                     objects)
 
-                                if rule.check(has_car, has_person, time_in_zone):
-                                    alert_key = (zone_index, rule.condition)
-                                    last_alert = self.rule_last_alert.get(alert_key, 0)
-                                    if current_time - last_alert < rule.cooldown:
-                                        continue
+                                # Условие выполнено и прошло заданное время, значит это нарушение
+                                if not rule.check(has_car, has_person, time_in_zone):
+                                    continue
 
-                                    self.rule_last_alert[alert_key] = current_time
-                                    zone_name = zone_manager.zone_names[zone_index] if zone_index < len(
-                                        zone_manager.zone_names) else f"Zone_{zone_index}"
+                                obj['is_violation'] = True
 
-                                    messages = {
-                                        "has_person_no_car": "Человек без машины",
-                                        "has_car_no_person": "Машина без человека",
-                                        "has_both": "Машина и человек в зоне",
-                                        "has_none": "Зона пуста"
-                                    }
-                                    message = messages.get(rule.condition, "Условие выполнено")
+                                messages = {
+                                    "has_person_no_car": "Человек без машины",
+                                    "has_car_no_person": "Машина без человека",
+                                    "has_both": "Машина и человек в зоне",
+                                    "has_none": "Зона пуста"
+                                }
+                                message = messages.get(rule.condition, "Условие выполнено")
 
-                                    self.alert_signal.emit(zone_index, annotated_frame.copy(), source_id, message,
-                                                           time_in_zone)
-                                    self.db.insert_event(
-                                        source_id, zone_index, zone_name, "alert",
-                                        class_name=obj.get('class_name'), track_id=track_id,
-                                        ts=current_time, message=message,
-                                    )
+                                alert_key = (zone_index, rule.condition)
+                                if current_time - self.rule_last_alert.get(alert_key, 0) < rule.cooldown:
+                                    continue
+                                self.rule_last_alert[alert_key] = current_time
+                                pending_alerts.append((zone_index, source_id, message, time_in_zone))
+                                self.db.insert_event(
+                                    source_id, zone_index, zone_name_of(zone_index), "alert",
+                                    class_name=obj.get('class_name'), track_id=track_id,
+                                    ts=current_time, message=message,
+                                )
                             else:
                                 class_name = obj.get('class_name')
                                 if rule.class_name != "any" and class_name != rule.class_name:
@@ -224,40 +232,43 @@ class VideoThread(QThread):
                                 if time_in_zone < rule.min_time:
                                     continue
 
-                                alert_key = (zone_index, rule.class_name)
-                                last_alert = self.rule_last_alert.get(alert_key, 0)
-                                if current_time - last_alert < rule.cooldown:
-                                    continue
+                                obj['is_violation'] = True
 
+                                alert_key = (zone_index, rule.class_name)
+                                if current_time - self.rule_last_alert.get(alert_key, 0) < rule.cooldown:
+                                    continue
                                 self.rule_last_alert[alert_key] = current_time
-                                zone_name = zone_manager.zone_names[zone_index] if zone_index < len(
-                                    zone_manager.zone_names) else f"Zone_{zone_index}"
-                                self.alert_signal.emit(zone_index, annotated_frame.copy(), source_id, class_name,
-                                                       time_in_zone)
+                                pending_alerts.append((zone_index, source_id, class_name, time_in_zone))
                                 self.db.insert_event(
-                                    source_id, zone_index, zone_name, "alert",
+                                    source_id, zone_index, zone_name_of(zone_index), "alert",
                                     class_name=class_name, track_id=track_id,
                                     ts=current_time, message=f"Объект '{class_name}' в зоне",
                                 )
                     else:
                         if key in self.track_zone_time:
                             self.track_zone_time.pop(key)
-                            if is_counting or rules:
-                                zone_name = (
-                                    zone_manager.zone_names[zone_index]
-                                    if zone_index < len(zone_manager.zone_names)
-                                    else f"Зона {zone_index}"
-                                )
-                                self.stats_tracker.record_exit(
-                                    source_id, track_id, zone_index, zone_name, current_time
-                                )
-                                self.stats_updated.emit(source_id)
 
-                    if not rules:
-                        continue
+                # закрытые треки по истечению grace-period
+                closed = self.stats_tracker.update_presence(
+                    source_id, present_keys, zone_manager.zone_names, current_time
+                )
+                if closed:
+                    self.stats_updated.emit(source_id)
 
-                active_zones = {obj['zone_index'] for obj in objects if
-                                obj.get('in_zone') and obj.get('zone_index') is not None}
+                # Отрисовка по результатам анализа
+                if self.draw_rectangles:
+                    self.detectors[source_id].draw_rectangles = True
+                    self.detectors[source_id].annotate(
+                        annotated_frame, objects, zone_manager.zone_names
+                    )
+                else:
+                    self.detectors[source_id].draw_rectangles = False
+
+                for zone_index, src_id, message, t_in_zone in pending_alerts:
+                    self.alert_signal.emit(zone_index, annotated_frame.copy(), src_id, message, t_in_zone)
+
+                active_zones = {obj['zone_index'] for obj in objects
+                                if obj.get('is_violation') and obj.get('zone_index') is not None}
 
                 all_frames.append({
                     'id': source_id,

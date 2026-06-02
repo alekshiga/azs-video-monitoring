@@ -90,17 +90,22 @@ class StatsTracker:
     """
     Отслеживает завершённые визиты объектов по зонам
     """
-    def __init__(self, db=None, min_visit_duration: float = 3.0):
+    def __init__(self, db=None, min_visit_duration: float = 3.0, exit_grace: float = 5.0):
         """
         :param db: экземпляр core.database.Database
         :param min_visit_duration: минимальная длительность визита для учёта в
             статистике длительностей. На файлах видео ускорено, поэтому
             по умолчанию 3 сек, а на реальной IP-камере лучше 30+ сек
+        :param exit_grace: сколько секунд объект может отсутствовать в зоне,
+            прежде чем визит будет считаться завершенным, служит для того чтобы предотвратить потери объектов
+            из-за перекрытия, кратковременной потери трека и тд.
         """
         self.db = db
         self.min_visit_duration = min_visit_duration
+        self.exit_grace = exit_grace
         self._zone_stats: dict[tuple, ZoneStats] = {}
         self._active: dict[tuple, tuple] = {}
+        self._pending_exit: dict[tuple, float] = {}  # key -> время первого отсутствия
         self.session_start = datetime.now()
 
     def _ensure_zone(self, source_id, zone_index: int, zone_name: str) -> ZoneStats:
@@ -112,6 +117,8 @@ class StatsTracker:
     def record_entry(self, source_id, track_id: int, zone_index: int,
                      class_name: str, entered_at: float, zone_name: str = None):
         key = (source_id, track_id, zone_index)
+        # Восстанавливаем трек
+        self._pending_exit.pop(key, None)
         if key in self._active:
             return
         self._active[key] = (entered_at, class_name)
@@ -169,17 +176,38 @@ class StatsTracker:
             )
 
 
-    def cleanup_lost_tracks(self, source_id, active_track_ids: set,
-                            zone_names: list, current_time: float):
-        """Закрываем визиты треков которые пропали из кадра"""
-        lost = [
-            key for key in list(self._active)
-            if key[0] == source_id and key[1] not in active_track_ids
-        ]
-        for key in lost:
+    def update_presence(self, source_id, present_keys: set,
+                        zone_names: list, current_time: float) -> int:
+        """
+        Обновляет статус присутствия объектов в зонах подсчета и закрывает
+        завершённые визиты с учетом grace-периода
+
+        Если клиент заехал на заправку, и фактически находится там, но
+        трек объекта пропадает, начинаем отсчет grace-period, и только если объекта нет
+        grace-period (задаётся в коде в конструкторе StatsTracker), то считаем что
+        объект уехал
+        """
+        closed = 0
+        for key in list(self._active):
+            if key[0] != source_id:
+                continue
             _, track_id, zone_index = key
-            name = zone_names[zone_index] if zone_index < len(zone_names) else f"Зона {zone_index}"
-            self.record_exit(source_id, track_id, zone_index, name, current_time)
+
+            if (track_id, zone_index) in present_keys:
+                self._pending_exit.pop(key, None)
+                continue
+
+            if key not in self._pending_exit:
+                self._pending_exit[key] = current_time
+                continue
+
+            first_missing = self._pending_exit[key]
+            if current_time - first_missing >= self.exit_grace:
+                name = zone_names[zone_index] if zone_index < len(zone_names) else f"Зона {zone_index}"
+                self._pending_exit.pop(key, None)
+                self.record_exit(source_id, track_id, zone_index, name, first_missing)
+                closed += 1
+        return closed
 
 
     def get_zone_stats(self, source_id, zone_index: int) -> Optional[ZoneStats]:
@@ -201,13 +229,12 @@ class StatsTracker:
         if source_id is None:
             self._zone_stats.clear()
             self._active.clear()
+            self._pending_exit.clear()
         else:
-            for key in list(self._zone_stats):
-                if key[0] == source_id:
-                    del self._zone_stats[key]
-            for key in list(self._active):
-                if key[0] == source_id:
-                    del self._active[key]
+            for store in (self._zone_stats, self._active, self._pending_exit):
+                for key in list(store):
+                    if key[0] == source_id:
+                        del store[key]
         self.session_start = datetime.now()
 
 

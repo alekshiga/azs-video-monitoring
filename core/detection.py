@@ -101,9 +101,6 @@ class MotionDetector:
 
         self._cleanup_old_tracks(current_time, active_tracks)
         annotated_frame = frame.copy()
-        if self.draw_rectangles:
-            self._draw_frame(annotated_frame, moving_objects, forbidden_zones)
-
         return moving_objects, annotated_frame
 
     def _cleanup_old_tracks(self, current_time, active_ids):
@@ -113,32 +110,16 @@ class MotionDetector:
             self.track_first_seen.pop(tid, None)
             self.track_last_seen.pop(tid, None)
 
-    def _draw_frame(self, frame, objects, zones):
-        """
-        Отрисовка зон, объектов и траекторий на кадре
-        :param frame: кадр для отрисовки (модифицируется на месте)
-        :param objects: список обнаруженных объектов
-        :param zones: список запрещённых зон для отрисовки
-        :return:
-        """
-        # Отслеживаемые зоны
-        """
-        for i, (zx, zy, zw, zh) in enumerate(zones):
-            # Полупрозрачная заливка
-            overlay = frame.copy()
-            cv2.rectangle(overlay, (zx, zy), (zx + zw, zy + zh), (0, 100, 255), -1)
-            cv2.addWeighted(overlay, 0.12, frame, 0.88, 0, frame)
 
-            # Рамка
-            cv2.rectangle(frame, (zx, zy), (zx + zw, zy + zh), (0, 150, 255), 2)
-
-            # Название
-            label = f"Зона {i}"
-            (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)
-            cv2.rectangle(frame, (zx, zy - th - 10), (zx + tw + 8, zy), (0, 150, 255), -1)
-            cv2.putText(frame, label, (zx + 4, zy - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    def annotate(self, frame, objects, zone_names=None):
         """
-        # Объекты
+        Подсветка тревоги в рамке
+        """
+        if not self.draw_rectangles:
+            return frame
+
+        zone_names = zone_names or []
+
         for obj in objects:
             x, y, w, h = obj['bbox']
             track_id = obj.get('track_id')
@@ -146,31 +127,33 @@ class MotionDetector:
             conf = obj.get('confidence', 0)
             time_tracked = obj.get('time_tracked', 0)
             cls_id = obj.get('class_id', 0)
+            is_violation = obj.get('is_violation', False)
+            zone_index = obj.get('zone_index')
 
-            # Цвет по классу
             base_color = self.CLASS_COLORS.get(cls_id, (0, 255, 0))
 
-            if obj['in_zone']:
+            # Заливка по факту нарушения
+            if is_violation:
                 color = (0, 0, 255)
-                thickness = 3
-                # Красная заливка если есть движение в зоне
                 overlay = frame.copy()
                 cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 0, 255), -1)
                 cv2.addWeighted(overlay, 0.2, frame, 0.8, 0, frame)
             else:
                 color = base_color
-                thickness = 2
 
-            # Рамка объекта
-            #cv2.rectangle(frame, (x, y), (x + w, y + h), color, thickness)
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
 
-            # Метка
             id_str = f"#{track_id}" if track_id is not None else ""
             time_str = f"{time_tracked:.0f}s" if time_tracked > 1 else ""
-            label = f"{cls_name}{id_str} {conf:.0%} {time_str}"
+            label = f"{cls_name}{id_str} {conf:.0%} {time_str}".strip()
 
-            if obj['in_zone']:
-                label = f"ALERT {label} Zone {obj['zone_index']}"
+            # Для метки + реальное название зоны
+            if is_violation:
+                if zone_index is not None and zone_index < len(zone_names):
+                    zone_label = zone_names[zone_index]
+                else:
+                    zone_label = f"Зона {zone_index}" if zone_index is not None else ""
+                label = f"ALERT {label} [{zone_label}]"
 
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             cv2.rectangle(frame, (x, y - th - 10), (x + tw + 6, y), color, -1)
@@ -184,6 +167,8 @@ class MotionDetector:
                         alpha = j / len(points)
                         pt_color = tuple(int(c * alpha) for c in color)
                         cv2.line(frame, points[j - 1], points[j], pt_color, 2)
+
+        return frame
 
     def reset(self):
         self.trajectories.clear()

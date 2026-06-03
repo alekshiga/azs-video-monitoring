@@ -4,12 +4,14 @@ import torch
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from core.alert_filter import AlertFilter
+from core.anpr import PlateRecognizer
 from core.database import Database
 from core.detection import MotionDetector
 from core.scenario_analyzer import ScenarioAnalyzer
 from core.stats_tracker import StatsTracker, VEHICLE_CLASSES
 from core.zone_manager import ZoneManager
 from input.source_manager import SourceManager
+from output.incident_storage import save_snapshot
 
 
 class VideoThread(QThread):
@@ -18,6 +20,7 @@ class VideoThread(QThread):
     alert_signal = pyqtSignal(int, object, int, str, float)
     camera_status_changed = pyqtSignal(int, bool)  # source_id, is_connected
     stats_updated = pyqtSignal(int)                 # source_id
+    plate_recognized = pyqtSignal(int, str, float)  # source_id, plate, confidence
 
     def __init__(self, source_manager: SourceManager):
         super().__init__()
@@ -49,6 +52,12 @@ class VideoThread(QThread):
         self._source_connected_state = {}  # source_id -> bool, для отслеживания изменений статуса
         self.db = Database()
         self.stats_tracker = StatsTracker(db=self.db)
+
+        # ANPR — распознавание автономеров (можно выключить из UI)
+        self.anpr_enabled = True
+        self.anpr = PlateRecognizer(gpu=(self.device == 'cuda'))
+        self._known_plate_tracks = set()   # (source_id, track_id), для которых номер уже записан
+        self.repeat_visit_window = 3600.0  # окно (сек) для подсчёта повторных визитов
 
     def init_source(self, source_id):
         if source_id in self.zone_managers:
@@ -103,6 +112,73 @@ class VideoThread(QThread):
         self.scenario_analyzers.pop(source_id, None)
         self.frame_counters.pop(source_id, None)
 
+    def _process_anpr(self, source_id, frame, objects, current_time):
+        """
+        Распознаёт номера у транспортных средств в кадре. При первом устойчивом
+        распознавании для трека: пишет номер в БД, проверяет чёрный/белый список
+        и повторные визиты, при необходимости формирует тревогу.
+        """
+        active_vehicle_tracks = set()
+        for obj in objects:
+            if obj.get('class_name') not in VEHICLE_CLASSES:
+                continue
+            track_id = obj.get('track_id')
+            bbox = obj.get('bbox')
+            if track_id is None or bbox is None:
+                continue
+            active_vehicle_tracks.add(track_id)
+
+            best = self.anpr.process_vehicle(frame, bbox, track_id, current_time)
+            if not best:
+                continue
+            obj['plate'] = best['plate']  # для отрисовки
+
+            key = (source_id, track_id)
+            if key in self._known_plate_tracks:
+                continue  # номер этого трека уже записан
+            self._known_plate_tracks.add(key)
+
+            plate = best['plate']
+            conf = best['conf']
+
+            # снимок момента распознавания
+            snap = save_snapshot(frame, source_id, -1)
+
+            # повторные визиты до записи текущего
+            prior_visits = self.db.plate_visit_count(
+                plate, since=current_time - self.repeat_visit_window
+            )
+            self.db.insert_plate(source_id, track_id, plate, conf,
+                                 snapshot=snap, ts=current_time)
+            self.plate_recognized.emit(source_id, plate, conf)
+            self.log_signal.emit(f"Распознан номер: {plate} ({conf:.0%})")
+
+            # проверка списков и повторных визитов -> тревога
+            watch = self.db.get_watch_status(plate)
+            src = self.source_manager.get_source(source_id)
+            cam_name = src.name if src else f"Камера {source_id}"
+            if watch == "black":
+                msg = f"Номер {plate} в чёрном списке"
+                self.db.insert_alert(source_id, cam_name, -1, "ANPR",
+                                     class_name=plate, message=msg, snapshot=snap,
+                                     ts=current_time)
+                self.alert_signal.emit(-1, frame.copy(), source_id, msg, 0.0)
+                self.log_signal.emit(f"ТРЕВОГА: {msg}")
+            elif prior_visits >= 2:
+                msg = f"Повторный визит {plate} ({prior_visits + 1}-й раз за час)"
+                self.db.insert_alert(source_id, cam_name, -1, "ANPR",
+                                     class_name=plate, message=msg, snapshot=snap,
+                                     ts=current_time)
+                self.alert_signal.emit(-1, frame.copy(), source_id, msg, 0.0)
+                self.log_signal.emit(f"Внимание: {msg}")
+
+        self.anpr.cleanup(active_vehicle_tracks)
+        # чистим записи known_plate для исчезнувших треков этой камеры
+        self._known_plate_tracks = {
+            (s, t) for (s, t) in self._known_plate_tracks
+            if s != source_id or t in active_vehicle_tracks
+        }
+
     def run(self):
         self.running = True
         self.log_signal.emit("Поток видео запущен")
@@ -152,6 +228,10 @@ class VideoThread(QThread):
 
                 current_time = time.time()
                 zone_rules = zone_manager.zone_rules
+
+                # --- ANPR: распознавание номеров транспортных средств ---
+                if self.anpr_enabled:
+                    self._process_anpr(source_id, frame, objects, current_time)
 
                 present_keys = {
                     (obj['track_id'], obj['zone_index'])

@@ -80,9 +80,29 @@ class Database:
                     created_at   TEXT DEFAULT (datetime('now','localtime'))
                 );
 
+                CREATE TABLE IF NOT EXISTS plates (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_id   INTEGER,
+                    track_id    INTEGER,
+                    plate       TEXT NOT NULL,
+                    confidence  REAL,
+                    snapshot    TEXT,
+                    ts          REAL,
+                    plate_dt    TEXT,
+                    created_at  TEXT DEFAULT (datetime('now','localtime'))
+                );
+
+                CREATE TABLE IF NOT EXISTS plate_watchlist (
+                    plate       TEXT PRIMARY KEY,
+                    list_type   TEXT NOT NULL,   -- black / white
+                    note        TEXT,
+                    created_at  TEXT DEFAULT (datetime('now','localtime'))
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_visits_src ON visits(source_id, zone_index);
                 CREATE INDEX IF NOT EXISTS idx_events_src ON events(source_id, zone_index, event_type);
                 CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+                CREATE INDEX IF NOT EXISTS idx_plates_plate ON plates(plate);
             """)
             self._conn.commit()
 
@@ -174,6 +194,85 @@ class Database:
             rows = self._conn.execute(q, params).fetchall()
         return [dict(r) for r in rows]
 
+    def insert_plate(self, source_id, track_id, plate, confidence,
+                     snapshot=None, ts=None) -> Optional[int]:
+        """
+        Записывает распознанный номер в журнал
+        """
+        ts = ts if ts is not None else time.time()
+        plate_dt = datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "INSERT INTO plates (source_id, track_id, plate, confidence, "
+                    "snapshot, ts, plate_dt) VALUES (?,?,?,?,?,?,?)",
+                    (source_id, track_id, plate, confidence, snapshot, ts, plate_dt),
+                )
+                self._conn.commit()
+                return cur.lastrowid
+        except Exception as e:
+            print(f"[DB] Ошибка записи номера: {e}")
+            return None
+
+    def recent_plates(self, source_id=None, limit: int = 300) -> list[dict]:
+        q = "SELECT * FROM plates"
+        params = []
+        if source_id is not None:
+            q += " WHERE source_id=?"; params.append(source_id)
+        q += " ORDER BY id DESC LIMIT ?"; params.append(limit)
+        with self._lock:
+            rows = self._conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
+
+    def plate_visit_count(self, plate: str, since: Optional[float] = None) -> int:
+        """
+        Кол-во появлений данных номеров на заправке
+        """
+        q = "SELECT COUNT(*) FROM plates WHERE plate=?"
+        params = [plate]
+        if since is not None:
+            q += " AND ts>=?"; params.append(since)
+        with self._lock:
+            return self._conn.execute(q, params).fetchone()[0]
+
+    def get_watch_status(self, plate: str) -> Optional[str]:
+        """
+        Возвращает black или white, если номер в списке, иначе None,
+        но нужно нормальное качество для OCR
+        """
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT list_type FROM plate_watchlist WHERE plate=?", (plate,)
+            ).fetchone()
+        return row["list_type"] if row else None
+
+    def set_watch(self, plate: str, list_type: str, note: str = "") -> None:
+        try:
+            with self._lock:
+                self._conn.execute(
+                    "INSERT INTO plate_watchlist (plate, list_type, note) VALUES (?,?,?) "
+                    "ON CONFLICT(plate) DO UPDATE SET list_type=excluded.list_type, "
+                    "note=excluded.note",
+                    (plate, list_type, note),
+                )
+                self._conn.commit()
+        except Exception as e:
+            print(f"[DB] Ошибка watchlist: {e}")
+
+    def remove_watch(self, plate: str) -> None:
+        with self._lock:
+            self._conn.execute("DELETE FROM plate_watchlist WHERE plate=?", (plate,))
+            self._conn.commit()
+
+    def get_watchlist(self, list_type: Optional[str] = None) -> list[dict]:
+        q = "SELECT * FROM plate_watchlist"
+        params = []
+        if list_type:
+            q += " WHERE list_type=?"; params.append(list_type)
+        q += " ORDER BY created_at DESC"
+        with self._lock:
+            rows = self._conn.execute(q, params).fetchall()
+        return [dict(r) for r in rows]
 
     def insert_alert(self, source_id, camera_name, zone_index, zone_name,
                      class_name=None, message=None, time_in_zone=None,

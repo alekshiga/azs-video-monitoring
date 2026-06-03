@@ -21,6 +21,7 @@ from ui.image_stitching import ImageStitcher
 from ui.video_widget import VideoWidget
 from ui.rule_dialog import ZoneRulesDialog
 from ui.alerts_widget import AlertsWidget
+from ui.plates_widget import PlatesWidget
 
 
 class MainWindow(QMainWindow):
@@ -276,6 +277,11 @@ class MainWindow(QMainWindow):
         self.alerts_widget.alerts_changed.connect(self._update_alerts_tab_title)
         self._alerts_tab_index = self.tabs.addTab(self.alerts_widget, "Тревоги")
         self._update_alerts_tab_title()
+
+        # Вкладка "Автомобильные номера"
+        self.plates_widget = PlatesWidget(self.video_thread.db)
+        self.tabs.addTab(self.plates_widget, "Автономера")
+        self.video_thread.plate_recognized.connect(self._on_plate_recognized)
 
     def _connect_signals(self):
         self.single_mode_btn.clicked.connect(self._set_single_mode)
@@ -614,6 +620,11 @@ class MainWindow(QMainWindow):
         new = self.alerts_widget.new_count()
         title = f"Тревоги ({new})" if new else "Тревоги"
         self.tabs.setTabText(self._alerts_tab_index, title)
+
+    def _on_plate_recognized(self, source_id, plate, confidence):
+        self._add_log(f"Распознан номер: {plate} ({confidence:.0%})")
+        if hasattr(self, "plates_widget"):
+            self.plates_widget.refresh()
 
     def _on_stats_updated(self, source_id=None):
         self._refresh_stats_label()

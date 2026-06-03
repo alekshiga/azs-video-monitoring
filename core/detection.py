@@ -18,19 +18,20 @@ def _rect_intersects(rect1, rect2):
 
 
 class MotionDetector:
-    WATCHED_CLASSES = {0: "person", 2: "car", 5: "bus", 7: "truck"}
+    WATCHED_CLASSES = {0: "person", 2: "car", 5: "bus", 7: "truck", 67: "cell phone"}
     CLASS_COLORS = {
         0: (0, 255, 0),
         2: (255, 128, 0),
         5: (255, 0, 128),
-        7: (128, 0, 255)
+        7: (128, 0, 255),
+        67: (255, 0, 255),
     }
 
     def __init__(self, model_name="yolov8m.pt", confidence=0.5, device=None, watched_classes=None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model = YOLO(model_name)
         self.draw_rectangles = True
-        self.watched_classes = watched_classes or {0, 2, 5, 7}
+        self.watched_classes = watched_classes or {0, 2, 5, 7, 67}
         self.confidence = confidence
         self.frame_count = 0
         self.trajectories = {}
@@ -158,6 +159,22 @@ class MotionDetector:
             (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
             cv2.rectangle(frame, (x, y - th - 10), (x + tw + 6, y), color, -1)
             cv2.putText(frame, label, (x + 3, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+            # выше обычной метки класса (жёлтая рамка, как у камер ГИБДД (Азимут))
+            plate = obj.get('plate')
+            if plate:
+                p_scale, p_thick = 0.7, 2
+                (pw, ph), _ = cv2.getTextSize(plate, cv2.FONT_HERSHEY_SIMPLEX, p_scale, p_thick)
+                box_w, box_h = pw + 12, ph + 12
+                bx = x
+                by_bottom = y - th - 12
+                by_top = by_bottom - box_h
+                if by_top < 0:
+                    by_top = y + 2
+                    by_bottom = by_top + box_h
+                cv2.rectangle(frame, (bx, by_top), (bx + box_w, by_bottom), (0, 0, 0), -1)
+                cv2.rectangle(frame, (bx, by_top), (bx + box_w, by_bottom), (0, 215, 255), 2)
+                cv2.putText(frame, plate, (bx + 6, by_bottom - 6),
+                            cv2.FONT_HERSHEY_SIMPLEX, p_scale, (0, 215, 255), p_thick)
 
             # Траектория
             if track_id and track_id in self.trajectories:

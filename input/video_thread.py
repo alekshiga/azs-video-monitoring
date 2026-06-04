@@ -46,18 +46,19 @@ class VideoThread(QThread):
         self.max_person_time = 600.0
         self.track_zone_time = {}
         self.rule_last_alert = {}
+        self.cond_rule_since = {}
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         print(f"VideoThread: {self.device.upper()}")
-        self._source_connected_state = {}  # source_id -> bool, для отслеживания изменений статуса
+        self._source_connected_state = {}
         self.db = Database()
         self.stats_tracker = StatsTracker(db=self.db)
 
-        # ANPR — распознавание автономеров (можно выключить из UI)
+        # Automatic Number Plate Recognition
         self.anpr_enabled = True
         self.anpr = PlateRecognizer(gpu=(self.device == 'cuda'))
-        self._known_plate_tracks = set()   # (source_id, track_id), для которых номер уже записан
-        self.repeat_visit_window = 3600.0  # окно (сек) для подсчёта повторных визитов
+        self._known_plate_tracks = set()
+        self.repeat_visit_window = 3600.0  # окно (сек) для подсчета повторных визитов
 
     def init_source(self, source_id):
         if source_id in self.zone_managers:
@@ -111,6 +112,69 @@ class VideoThread(QThread):
         self.alert_filters.pop(source_id, None)
         self.scenario_analyzers.pop(source_id, None)
         self.frame_counters.pop(source_id, None)
+
+    def _process_conditional_rules(self, source_id, objects, zone_manager,
+                                   zone_rules, current_time, pending_alerts,
+                                   zone_name_of):
+        """
+        Для каждого правила ведется таймер непрерывного выполнения условия:
+            Условие: автомобиль без человека
+            если человек пропал, начинаем таймер, если его нет дольше заданного времени,
+            то вызываем тревогу, если он появился, обнуляем таймер отсутствия
+        """
+        active_cond_keys = set()
+        for zone_index, rules in zone_rules.items():
+            if not rules:
+                continue
+            # классы, присутствующие в этой зоне на текущем кадре
+            present_classes = set()
+            for o in objects:
+                if o.get('zone_index') != zone_index or not o.get('in_zone'):
+                    continue
+                cn = o.get('class_name')
+                if cn:
+                    present_classes.add(cn)
+                if cn in VEHICLE_CLASSES:
+                    present_classes.add('vehicle')
+
+            for ri, rule in enumerate(rules):
+                if not rule.enabled or not getattr(rule, 'is_conditional', False):
+                    continue
+                ckey = (source_id, zone_index, ri)
+                met = rule.condition_met(present_classes)
+
+                if not met:
+                    # условие нарушилось - запускаем таймер
+                    self.cond_rule_since.pop(ckey, None)
+                    continue
+
+                active_cond_keys.add(ckey)
+                # запускаем таймер при первом выполнении
+                started = self.cond_rule_since.setdefault(ckey, current_time)
+                held = current_time - started
+                if held < rule.duration:
+                    continue  # условие выполнено, ждем превышение времени
+
+                # нарушение активно - заливка зоны красным и отправка тревоги
+                for o in objects:
+                    if o.get('zone_index') == zone_index and o.get('in_zone'):
+                        o['is_violation'] = True
+
+                alert_key = (zone_index, 'cond', ri)
+                if current_time - self.rule_last_alert.get(alert_key, 0) < rule.cooldown:
+                    continue
+                self.rule_last_alert[alert_key] = current_time
+                message = rule.describe()
+                pending_alerts.append((zone_index, source_id, message, held))
+                self.db.insert_event(
+                    source_id, zone_index, zone_name_of(zone_index), "alert",
+                    class_name=None, track_id=None,
+                    ts=current_time, message=message,
+                )
+
+        for k in list(self.cond_rule_since):
+            if k[0] == source_id and k not in active_cond_keys:
+                self.cond_rule_since.pop(k, None)
 
     def _process_anpr(self, source_id, frame, objects, current_time):
         """
@@ -278,58 +342,41 @@ class VideoThread(QThread):
 
                         time_in_zone = current_time - self.track_zone_time[key]
 
+                        # Простые правила (по классу объекта) — таймер по объекту
                         for rule in rules:
-                            if not rule.enabled:
+                            if not rule.enabled or getattr(rule, 'is_conditional', False):
+                                continue
+                            class_name = obj.get('class_name')
+                            if rule.class_name != "any" and class_name != rule.class_name:
+                                continue
+                            if time_in_zone < rule.min_time:
                                 continue
 
-                            if getattr(rule, 'is_conditional', False):
-                                present_classes = set()
-                                for o in objects:
-                                    if o.get('zone_index') != zone_index:
-                                        continue
-                                    cn = o.get('class_name')
-                                    if cn:
-                                        present_classes.add(cn)
-                                    if cn in VEHICLE_CLASSES:
-                                        present_classes.add('vehicle')
-                                if not rule.check(present_classes, time_in_zone):
-                                    continue
+                            obj['is_violation'] = True
 
-                                obj['is_violation'] = True
-                                message = rule.describe()
-
-                                alert_key = (zone_index, 'cond', rule.describe(), rule.logic)
-                                if current_time - self.rule_last_alert.get(alert_key, 0) < rule.cooldown:
-                                    continue
-                                self.rule_last_alert[alert_key] = current_time
-                                pending_alerts.append((zone_index, source_id, message, time_in_zone))
-                                self.db.insert_event(
-                                    source_id, zone_index, zone_name_of(zone_index), "alert",
-                                    class_name=obj.get('class_name'), track_id=track_id,
-                                    ts=current_time, message=message,
-                                )
-                            else:
-                                class_name = obj.get('class_name')
-                                if rule.class_name != "any" and class_name != rule.class_name:
-                                    continue
-                                if time_in_zone < rule.min_time:
-                                    continue
-
-                                obj['is_violation'] = True
-
-                                alert_key = (zone_index, rule.class_name)
-                                if current_time - self.rule_last_alert.get(alert_key, 0) < rule.cooldown:
-                                    continue
-                                self.rule_last_alert[alert_key] = current_time
-                                pending_alerts.append((zone_index, source_id, class_name, time_in_zone))
-                                self.db.insert_event(
-                                    source_id, zone_index, zone_name_of(zone_index), "alert",
-                                    class_name=class_name, track_id=track_id,
-                                    ts=current_time, message=f"Объект '{class_name}' в зоне",
-                                )
+                            alert_key = (zone_index, rule.class_name)
+                            if current_time - self.rule_last_alert.get(alert_key, 0) < rule.cooldown:
+                                continue
+                            self.rule_last_alert[alert_key] = current_time
+                            pending_alerts.append((zone_index, source_id, class_name, time_in_zone))
+                            self.db.insert_event(
+                                source_id, zone_index, zone_name_of(zone_index), "alert",
+                                class_name=class_name, track_id=track_id,
+                                ts=current_time, message=f"Объект '{class_name}' в зоне",
+                            )
                     else:
                         if key in self.track_zone_time:
                             self.track_zone_time.pop(key)
+
+                # --- Условные (ситуативные) правила: проверка на уровне ЗОНЫ ---
+                # Таймер меряет НЕПРЕРЫВНОЕ выполнение условия и сбрасывается,
+                # как только условие перестаёт выполняться (например, в зоне
+                # снова появился человек). Так кратковременная потеря/перекрытие
+                # объекта не копит время, а реальное появление обнуляет счётчик.
+                self._process_conditional_rules(
+                    source_id, objects, zone_manager, zone_rules,
+                    current_time, pending_alerts, zone_name_of
+                )
 
                 # закрытые треки по истечению grace-period
                 closed = self.stats_tracker.update_presence(

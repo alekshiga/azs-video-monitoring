@@ -76,21 +76,23 @@ class ConditionalRule:
                 result.append({"class": c[0], "present": bool(c[1])})
         return result
 
-    def check(self, present_classes, elapsed_time):
-        """
-        :param present_classes: множество классов, присутствующих в зоне сейчас
-            (вообще если есть любой транспорт)
-        :param elapsed_time: сколько секунд объект уже в зоне
-        """
+    def condition_met(self, present_classes) -> bool:
+
         results = []
         for c in self.conditions:
             is_present = c["class"] in present_classes
             results.append(is_present if c["present"] else not is_present)
-
         if not results:
             return False
-        combined = all(results) if self.logic == "and" else any(results)
-        return combined and elapsed_time >= self.duration
+        return all(results) if self.logic == "and" else any(results)
+
+    def check(self, present_classes, elapsed_time):
+        """
+        Совместимость: условие выполнено И удерживается дольше какого-то порога времени,
+        чтобы не терять из кадра объекты
+        :param elapsed_time: сколько секунд НЕПРЕРЫВНО выполняется условие
+        """
+        return self.condition_met(present_classes) and elapsed_time >= self.duration
 
     def describe(self):
         # Удобные условные правила

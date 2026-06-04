@@ -95,7 +95,8 @@ class AddRuleDialog(QDialog):
         preset_group.setLayout(pg)
         lay.addWidget(preset_group)
 
-        manual_group = QGroupBox("Условия (что должно быть в зоне)")
+        self.manual_group = QGroupBox("Свой вариант (ручная настройка условий)")
+        manual_group = self.manual_group
         mg = QVBoxLayout()
 
         row1 = QHBoxLayout()
@@ -145,16 +146,20 @@ class AddRuleDialog(QDialog):
         self.tabs.addTab(tab, "По ситуации (машина/человек)")
 
         self.preset_combo.setCurrentIndex(1)
+        self._apply_preset()  # выставить начальное состояние блокировки
 
     def _apply_preset(self):
         name = self.preset_combo.currentData()
-        if not name:
-            return
+
+        is_custom = name is None
+        self.manual_group.setEnabled(is_custom)
+
+        if is_custom:
+            return  # ничего не перезаписываем, пользователь настраивает сам
+
         conditions, logic = CONDITION_PRESETS[name]
-        # первое условие
         self._set_combo_data(self.cond1_class, conditions[0][0])
         self._set_combo_data(self.cond1_state, conditions[0][1])
-        # второе условие
         if len(conditions) > 1:
             self.cond2_enabled.setChecked(True)
             self._set_combo_data(self.cond2_class, conditions[1][0])

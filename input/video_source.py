@@ -4,9 +4,6 @@ import threading
 import time
 from collections import deque
 
-# RTSP поверх TCP (надёжнее UDP — кадры не рассыпаются при потере пакетов) и
-# таймаут на чтение/открытие, чтобы при обрыве связи поток не зависал намертво.
-# Должно быть установлено до создания cv2.VideoCapture для RTSP.
 os.environ.setdefault(
     "OPENCV_FFMPEG_CAPTURE_OPTIONS",
     "rtsp_transport;tcp|stimeout;5000000"
@@ -27,6 +24,10 @@ class VideoSource:
         self.fps = 60
         self.frame_buffer = deque(maxlen=2)
         self.zones_file = f"config/zones_cam_{source_id}.json"
+        self.is_file = (
+            isinstance(source_path, str)
+            and source_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv'))
+        )
 
     def connect(self) -> bool:
         try:
@@ -51,7 +52,8 @@ class VideoSource:
                 self.is_connected = True
                 self.fps = self.cap.get(cv2.CAP_PROP_FPS)
                 if self.fps <= 0:
-                    self.fps = 60
+                    # для файла 25, для камеры 60
+                    self.fps = 25.0 if self.is_file else 60.0
                 print(f"[{self.name}] Подключен (FPS: {self.fps:.1f})")
                 return True
             else:
@@ -90,14 +92,29 @@ class VideoSource:
                 continue
 
             if self.cap and self.cap.isOpened():
+                frame_start = time.time()
                 ret, frame = self.cap.read()
                 if ret and frame is not None:
                     with self._lock:
                         self.frame_buffer.append(frame.copy())
+
+                    if self.is_file:
+                        # НА ФАЙЛЕ ВЫСТАВЛЯЕМ 30 ФПС
+                        target = 1.0 / self.fps if self.fps > 0 else 1.0 / 25.0
+                        elapsed = time.time() - frame_start
+                        if elapsed < target:
+                            time.sleep(target - elapsed)
+                    else:
+                        time.sleep(0.01)
+                elif self.is_file:
+                    self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    time.sleep(0.01)
                 else:
                     self.is_connected = False
                     print(f"[{self.name}] Потеря соединения")
-            time.sleep(0.01)
+                    time.sleep(0.01)
+            else:
+                time.sleep(0.01)
 
     def get_last_frame(self):
         with self._lock:

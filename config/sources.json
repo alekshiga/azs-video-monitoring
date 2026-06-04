@@ -5,21 +5,28 @@
       "name": "Test video 1",
       "path": "videos/vid1.mp4",
       "enabled": true,
-      "type": "file"
+      "type": "ip"
     },
     {
       "id": 2,
       "name": "Test video 2",
       "path": "videos/vid2.mp4",
       "enabled": true,
-      "type": "file"
+      "type": "ip"
     },
     {
       "id": 3,
-      "name": "Test video 3",
-      "path": "videos/vid3.mp4",
+      "name": "ANPR test video",
+      "path": "videos/anpr_test.mp4",
       "enabled": true,
-      "type": "file"
+      "type": "ip"
+    },
+    {
+      "id": 4,
+      "name": "phone",
+      "path": "rtsp://10.12.208.74:8554/live/phone",
+      "enabled": true,
+      "type": "ip"
     }
   ]
 }

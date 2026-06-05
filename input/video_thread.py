@@ -56,9 +56,15 @@ class VideoThread(QThread):
 
         # Automatic Number Plate Recognition
         self.anpr_enabled = True
+        self.anpr_debug = False   # сохранять обработанные кропы (только для отладки)
         self.anpr = PlateRecognizer(gpu=(self.device == 'cuda'))
-        self._known_plate_tracks = set()
-        self.repeat_visit_window = 3600.0  # окно (сек) для подсчета повторных визитов
+        self.repeat_visit_window = 3600.0   # окно (сек) для подсчёта повторных визитов
+        # Дедупликация по самому номеру (track_id нестабилен): не регистрируем
+        # один и тот же номер чаще, чем раз в plate_log_cooldown секунд.
+        self._plate_last_logged = {}        # plate -> ts последней записи в БД
+        self.plate_log_cooldown = 60.0
+        self._plate_alert_last = {}          # plate -> ts последней тревоги по номеру
+        self.plate_alert_cooldown = 300.0    # не чаще раза в 5 минут на номер
 
     def init_source(self, source_id):
         if source_id in self.zone_managers:
@@ -192,56 +198,49 @@ class VideoThread(QThread):
                 continue
             active_vehicle_tracks.add(track_id)
 
-            best = self.anpr.process_vehicle(frame, bbox, track_id, current_time)
+            best = self.anpr.process_vehicle(frame, bbox, track_id, current_time,
+                                             debug=self.anpr_debug)
             if not best:
                 continue
-            obj['plate'] = best['plate']  # для отрисовки
-
-            key = (source_id, track_id)
-            if key in self._known_plate_tracks:
-                continue  # номер этого трека уже записан
-            self._known_plate_tracks.add(key)
-
             plate = best['plate']
             conf = best['conf']
+            obj['plate'] = plate  # для отрисовки на кадре
 
-            # снимок момента распознавания
-            snap = save_snapshot(frame, source_id, -1)
+            last_log = self._plate_last_logged.get(plate, 0)
+            if current_time - last_log < self.plate_log_cooldown:
+                continue
+            self._plate_last_logged[plate] = current_time
 
-            # повторные визиты до записи текущего
+            # повторные визиты считаем ДО записи текущего
             prior_visits = self.db.plate_visit_count(
                 plate, since=current_time - self.repeat_visit_window
             )
+            snap = save_snapshot(frame, source_id, -1)
             self.db.insert_plate(source_id, track_id, plate, conf,
                                  snapshot=snap, ts=current_time)
             self.plate_recognized.emit(source_id, plate, conf)
             self.log_signal.emit(f"Распознан номер: {plate} ({conf:.0%})")
 
-            # проверка списков и повторных визитов -> тревога
+            alert_last = self._plate_alert_last.get(plate, 0)
+            if current_time - alert_last < self.plate_alert_cooldown:
+                continue
             watch = self.db.get_watch_status(plate)
             src = self.source_manager.get_source(source_id)
             cam_name = src.name if src else f"Камера {source_id}"
+            msg = None
             if watch == "black":
                 msg = f"Номер {plate} в чёрном списке"
+            elif prior_visits >= 2:
+                msg = f"Повторный визит {plate} ({prior_visits + 1}-й раз за час)"
+            if msg:
+                self._plate_alert_last[plate] = current_time
                 self.db.insert_alert(source_id, cam_name, -1, "ANPR",
                                      class_name=plate, message=msg, snapshot=snap,
                                      ts=current_time)
                 self.alert_signal.emit(-1, frame.copy(), source_id, msg, 0.0)
                 self.log_signal.emit(f"ТРЕВОГА: {msg}")
-            elif prior_visits >= 2:
-                msg = f"Повторный визит {plate} ({prior_visits + 1}-й раз за час)"
-                self.db.insert_alert(source_id, cam_name, -1, "ANPR",
-                                     class_name=plate, message=msg, snapshot=snap,
-                                     ts=current_time)
-                self.alert_signal.emit(-1, frame.copy(), source_id, msg, 0.0)
-                self.log_signal.emit(f"Внимание: {msg}")
 
         self.anpr.cleanup(active_vehicle_tracks)
-        # чистим записи known_plate для исчезнувших треков этой камеры
-        self._known_plate_tracks = {
-            (s, t) for (s, t) in self._known_plate_tracks
-            if s != source_id or t in active_vehicle_tracks
-        }
 
     def run(self):
         self.running = True
@@ -293,7 +292,6 @@ class VideoThread(QThread):
                 current_time = time.time()
                 zone_rules = zone_manager.zone_rules
 
-                # --- ANPR: распознавание номеров транспортных средств ---
                 if self.anpr_enabled:
                     self._process_anpr(source_id, frame, objects, current_time)
 
@@ -331,7 +329,7 @@ class VideoThread(QThread):
                             self.track_zone_time[key] = current_time
                             # Конверсия и визиты считаются ТОЛЬКО в зоне подсчёта.
                             # Зоны контроля дают только тревоги, в статистику потока
-                            # они не идут (иначе транзитный транспорт портит конверсию).
+                            # они не идут (иначе случайный транспорт портит конверсию).
                             if is_counting:
                                 self.stats_tracker.record_entry(
                                     source_id, track_id, zone_index,
@@ -342,7 +340,7 @@ class VideoThread(QThread):
 
                         time_in_zone = current_time - self.track_zone_time[key]
 
-                        # Простые правила (по классу объекта) — таймер по объекту
+                        # Простые правила (по классу объекта) - таймер по объекту
                         for rule in rules:
                             if not rule.enabled or getattr(rule, 'is_conditional', False):
                                 continue
@@ -368,11 +366,6 @@ class VideoThread(QThread):
                         if key in self.track_zone_time:
                             self.track_zone_time.pop(key)
 
-                # --- Условные (ситуативные) правила: проверка на уровне ЗОНЫ ---
-                # Таймер меряет НЕПРЕРЫВНОЕ выполнение условия и сбрасывается,
-                # как только условие перестаёт выполняться (например, в зоне
-                # снова появился человек). Так кратковременная потеря/перекрытие
-                # объекта не копит время, а реальное появление обнуляет счётчик.
                 self._process_conditional_rules(
                     source_id, objects, zone_manager, zone_rules,
                     current_time, pending_alerts, zone_name_of

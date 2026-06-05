@@ -224,16 +224,16 @@ class Database:
             rows = self._conn.execute(q, params).fetchall()
         return [dict(r) for r in rows]
 
-    def plate_visit_count(self, plate: str, since: Optional[float] = None) -> int:
-        """
-        Кол-во появлений данных номеров на заправке
-        """
-        q = "SELECT COUNT(*) FROM plates WHERE plate=?"
-        params = [plate]
-        if since is not None:
-            q += " AND ts>=?"; params.append(since)
+    def unique_plates(self, limit: int = 300) -> list[dict]:
         with self._lock:
-            return self._conn.execute(q, params).fetchone()[0]
+            rows = self._conn.execute(
+                "SELECT p.* FROM plates p "
+                "JOIN (SELECT plate, MAX(id) AS mid FROM plates GROUP BY plate) g "
+                "ON p.id = g.mid "
+                "ORDER BY p.id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     def get_watch_status(self, plate: str) -> Optional[str]:
         """

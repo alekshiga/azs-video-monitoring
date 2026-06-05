@@ -55,10 +55,9 @@ class VideoThread(QThread):
         self.stats_tracker = StatsTracker(db=self.db)
 
         # Automatic Number Plate Recognition
-        self.anpr_enabled = True
-        self.anpr_debug = False   # сохранять обработанные кропы (только для отладки)
+        self.anpr_enabled = True   # глобальный мастер-выключатель ANPR
+        self.anpr_debug = False    # сохранять обработанные кропы (только для отладки)
         self.anpr = PlateRecognizer(gpu=(self.device == 'cuda'))
-        self.repeat_visit_window = 3600.0   # окно (сек) для подсчёта повторных визитов
         # Дедупликация по самому номеру (track_id нестабилен): не регистрируем
         # один и тот же номер чаще, чем раз в plate_log_cooldown секунд.
         self._plate_last_logged = {}        # plate -> ts последней записи в БД
@@ -183,11 +182,6 @@ class VideoThread(QThread):
                 self.cond_rule_since.pop(k, None)
 
     def _process_anpr(self, source_id, frame, objects, current_time):
-        """
-        Распознаёт номера у транспортных средств в кадре. При первом устойчивом
-        распознавании для трека: пишет номер в БД, проверяет чёрный/белый список
-        и повторные визиты, при необходимости формирует тревогу.
-        """
         active_vehicle_tracks = set()
         for obj in objects:
             if obj.get('class_name') not in VEHICLE_CLASSES:
@@ -199,7 +193,7 @@ class VideoThread(QThread):
             active_vehicle_tracks.add(track_id)
 
             best = self.anpr.process_vehicle(frame, bbox, track_id, current_time,
-                                             debug=self.anpr_debug)
+                                             debug=self.anpr_debug, source_id=source_id)
             if not best:
                 continue
             plate = best['plate']
@@ -211,36 +205,29 @@ class VideoThread(QThread):
                 continue
             self._plate_last_logged[plate] = current_time
 
-            # повторные визиты считаем ДО записи текущего
-            prior_visits = self.db.plate_visit_count(
-                plate, since=current_time - self.repeat_visit_window
-            )
             snap = save_snapshot(frame, source_id, -1)
             self.db.insert_plate(source_id, track_id, plate, conf,
                                  snapshot=snap, ts=current_time)
             self.plate_recognized.emit(source_id, plate, conf)
             self.log_signal.emit(f"Распознан номер: {plate} ({conf:.0%})")
 
+            watch = self.db.get_watch_status(plate)
+            if watch != "black":
+                continue
             alert_last = self._plate_alert_last.get(plate, 0)
             if current_time - alert_last < self.plate_alert_cooldown:
                 continue
-            watch = self.db.get_watch_status(plate)
+            self._plate_alert_last[plate] = current_time
             src = self.source_manager.get_source(source_id)
             cam_name = src.name if src else f"Камера {source_id}"
-            msg = None
-            if watch == "black":
-                msg = f"Номер {plate} в чёрном списке"
-            elif prior_visits >= 2:
-                msg = f"Повторный визит {plate} ({prior_visits + 1}-й раз за час)"
-            if msg:
-                self._plate_alert_last[plate] = current_time
-                self.db.insert_alert(source_id, cam_name, -1, "ANPR",
-                                     class_name=plate, message=msg, snapshot=snap,
-                                     ts=current_time)
-                self.alert_signal.emit(-1, frame.copy(), source_id, msg, 0.0)
-                self.log_signal.emit(f"ТРЕВОГА: {msg}")
+            msg = f"Номер {plate} в чёрном списке"
+            self.db.insert_alert(source_id, cam_name, -1, "ANPR",
+                                 class_name=plate, message=msg, snapshot=snap,
+                                 ts=current_time)
+            self.alert_signal.emit(-1, frame.copy(), source_id, msg, 0.0)
+            self.log_signal.emit(f"ТРЕВОГА: {msg}")
 
-        self.anpr.cleanup(active_vehicle_tracks)
+        self.anpr.cleanup(active_vehicle_tracks, source_id=source_id)
 
     def run(self):
         self.running = True
@@ -292,7 +279,7 @@ class VideoThread(QThread):
                 current_time = time.time()
                 zone_rules = zone_manager.zone_rules
 
-                if self.anpr_enabled:
+                if self.anpr_enabled and getattr(source, 'anpr', False):
                     self._process_anpr(source_id, frame, objects, current_time)
 
                 present_keys = {

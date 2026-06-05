@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.single_mode_btn = None
         self.multi_mode_btn = None
         self.draw_rectangles_checkbox = None
+        self.anpr_checkbox = None
 
         self.current_mode = "single"
         self.current_source_id = None
@@ -217,6 +218,9 @@ class MainWindow(QMainWindow):
         self.draw_rectangles_checkbox.setChecked(True)
         panel_layout.addWidget(self.draw_rectangles_checkbox)
 
+        self.anpr_checkbox = QCheckBox("Распознавание номеров (ANPR) на этой камере")
+        panel_layout.addWidget(self.anpr_checkbox)
+
         zones_group = QGroupBox("Зоны контроля")
         zones_layout = QVBoxLayout()
         zones_btn_layout = QHBoxLayout()
@@ -280,7 +284,7 @@ class MainWindow(QMainWindow):
 
         # Вкладка "Автомобильные номера"
         self.plates_widget = PlatesWidget(self.video_thread.db)
-        self.tabs.addTab(self.plates_widget, "Автономера")
+        self.tabs.addTab(self.plates_widget, "Гос. номера")
         self.video_thread.plate_recognized.connect(self._on_plate_recognized)
 
     def _connect_signals(self):
@@ -298,6 +302,7 @@ class MainWindow(QMainWindow):
         self.remove_btn.clicked.connect(self.remove_current_camera)
 
         self.draw_rectangles_checkbox.stateChanged.connect(self._toggle_draw_rectangles)
+        self.anpr_checkbox.stateChanged.connect(self._toggle_anpr)
 
         self.video_thread.log_signal.connect(self._add_log)
 
@@ -342,6 +347,24 @@ class MainWindow(QMainWindow):
         self.source_manager.set_active_source(source_id)
         self._add_log(f"Выбрана камера {source_id}")
         self._load_zones_for_source(source_id)
+        self._sync_anpr_checkbox(source_id)
+
+    def _sync_anpr_checkbox(self, source_id):
+        src = self.source_manager.get_source(source_id)
+        if src and self.anpr_checkbox:
+            self.anpr_checkbox.blockSignals(True)
+            self.anpr_checkbox.setChecked(bool(getattr(src, 'anpr', False)))
+            self.anpr_checkbox.blockSignals(False)
+
+    def _toggle_anpr(self, state):
+        sid = self.current_source_id
+        if not sid:
+            return
+        enabled = state == 2
+        self.source_manager.set_anpr(sid, enabled)
+        self._add_log(
+            f"ANPR на камере {sid}: {'включено' if enabled else 'выключено'}"
+        )
 
     def _load_zones_for_source(self, source_id):
         f = self.source_manager.get_zones_file(source_id)

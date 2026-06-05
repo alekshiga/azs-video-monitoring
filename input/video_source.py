@@ -11,11 +11,12 @@ os.environ.setdefault(
 
 
 class VideoSource:
-    def __init__(self, source_id: int, name: str, source_path: str):
+    def __init__(self, source_id: int, name: str, source_path: str, anpr=False):
         self._thread = None
         self.source_id = source_id
         self.name = name
         self.source_path = source_path
+        self.anpr = anpr
         self.cap = None
         self.is_connected = False
         self.last_frame = None
@@ -38,7 +39,6 @@ class VideoSource:
                 self.cap = cv2.VideoCapture(self.source_path)
                 print(f"[{self.name}] Подключение к USB камере (индекс: {self.source_path})")
             elif isinstance(self.source_path, str) and self.source_path.startswith("rtsp://"):
-                # Явно через FFmpeg-бэкенд (учитывает OPENCV_FFMPEG_CAPTURE_OPTIONS выше)
                 self.cap = cv2.VideoCapture(self.source_path, cv2.CAP_FFMPEG)
                 print(f"[{self.name}] Подключение к IP-камере (RTSP): {self.source_path[:50]}...")
             elif isinstance(self.source_path, str) and self.source_path.endswith(('.mp4', '.avi', '.mov', '.mkv')):

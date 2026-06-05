@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-"""Юнит-тесты ANPR: нормализация номеров, валидация, журнал и watchlist в БД."""
 import os
 import tempfile
 
@@ -19,7 +17,6 @@ def test_normalize_and_validate():
 
 
 def test_db_plates_and_watchlist():
-    # свежий файл БД на каждый запуск, чтобы тест был детерминированным
     path = os.path.join(tempfile.gettempdir(), "anpr_test.db")
     for ext in ("", "-wal", "-shm"):
         try:
@@ -31,8 +28,6 @@ def test_db_plates_and_watchlist():
     db.insert_plate(1, 10, "A123BC45", 0.91, ts=1000.0)
     db.insert_plate(1, 11, "A123BC45", 0.88, ts=1500.0)
     db.insert_plate(1, 12, "X001YX199", 0.95, ts=1600.0)
-    assert db.plate_visit_count("A123BC45") == 2
-    assert db.plate_visit_count("X001YX199") == 1
     assert len(db.recent_plates(1)) == 3
 
     # watchlist

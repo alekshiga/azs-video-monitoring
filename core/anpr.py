@@ -264,15 +264,18 @@ class PlateRecognizer:
         except Exception as e:
             print(f"[ANPR] debug save error: {e}")
 
-    def process_vehicle(self, frame, bbox, track_id, current_time=None, debug=False):
+    def process_vehicle(self, frame, bbox, track_id, current_time=None,
+                        debug=False, source_id=0):
         if track_id is None or not self._ensure_reader():
             return None
         current_time = current_time or time.time()
 
-        last = self._last_try.get(track_id, 0)
+        key = (source_id, track_id)
+
+        last = self._last_try.get(key, 0)
         if current_time - last < self.recognize_interval:
-            return self._best_by_track.get(track_id)
-        self._last_try[track_id] = current_time
+            return self._best_by_track.get(key)
+        self._last_try[key] = current_time
 
         x, y, w, h = bbox
         pad = int(w * 0.05)
@@ -282,26 +285,24 @@ class PlateRecognizer:
         x2 = min(frame.shape[1], x + w + pad)
         region = frame[y1:y2, x1:x2]
         if region is None or region.size == 0:
-            return self._best_by_track.get(track_id)
+            return self._best_by_track.get(key)
 
-        debug_tag = f"trk{track_id}" if debug else None
+        debug_tag = f"cam{source_id}_trk{track_id}" if debug else None
         plate, conf, _ = self.recognize_best(region, debug_tag=debug_tag)
         if plate and conf >= self.min_confidence:
-            prev = self._best_by_track.get(track_id)
+            prev = self._best_by_track.get(key)
             if prev is None or conf > prev["conf"]:
-                self._best_by_track[track_id] = {
+                self._best_by_track[key] = {
                     "plate": plate, "conf": conf, "ts": current_time
                 }
-        return self._best_by_track.get(track_id)
+        return self._best_by_track.get(key)
 
-    def get_best(self, track_id):
-        return self._best_by_track.get(track_id)
+    def get_best(self, track_id, source_id=0):
+        return self._best_by_track.get((source_id, track_id))
 
-    def cleanup(self, active_track_ids):
-        """
-        Удаляет данные по трекам, которых больше нет в кадре
-        """
-        for tid in list(self._best_by_track):
-            if tid not in active_track_ids:
-                self._best_by_track.pop(tid, None)
-                self._last_try.pop(tid, None)
+    def cleanup(self, active_track_ids, source_id=0):
+        for key in list(self._best_by_track):
+            s, tid = key
+            if s == source_id and tid not in active_track_ids:
+                self._best_by_track.pop(key, None)
+                self._last_try.pop(key, None)

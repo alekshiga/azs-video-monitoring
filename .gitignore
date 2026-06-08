@@ -11,6 +11,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+installer_output/
 downloads/
 eggs/
 .eggs/
@@ -31,6 +32,8 @@ MANIFEST
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
 *.manifest
 *.spec
+# Рукописный spec проекта — часть конфигурации сборки, нужен для packaging\
+!AZS-Monitoring.spec
 
 # Installer logs
 pip-log.txt
@@ -208,3 +211,18 @@ __marimo__/
 exchange.db
 /videos/
 /repomix-output.xml
+
+# Локальная БД мониторинга
+data/
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Снимки инцидентов
+incidents/
+/.claude/
+/tools/auto.key
+/tools/auto.crt
+/tools/LICENSE
+/docs/

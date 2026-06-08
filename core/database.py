@@ -5,6 +5,8 @@ import threading
 from datetime import datetime
 from typing import Optional
 
+from app_paths import user_data_path
+
 
 class Database:
     """
@@ -16,7 +18,8 @@ class Database:
     аналитику не только за текущий сеанс, но и за любой период
     """
 
-    def __init__(self, db_path: str = "data/monitoring.db"):
+    def __init__(self, db_path: str = None):
+        db_path = db_path or user_data_path("data", "monitoring.db")
         self.db_path = db_path
         directory = os.path.dirname(db_path)
         if directory:

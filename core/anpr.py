@@ -6,8 +6,10 @@ import threading
 import cv2
 import numpy as np
 
+from app_paths import user_data_path
+
 # Папка для отладочных снимков распознанных/обработанных номеров
-ANPR_DEBUG_DIR = "incidents/anpr_debug"
+ANPR_DEBUG_DIR = user_data_path("incidents", "anpr_debug")
 
 RU_PLATE_LETTERS = "ABEKMHOPCTYX"  # допустимые буквы латиница, как их видит OCR
 CYR_TO_LAT = {

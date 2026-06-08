@@ -1,11 +1,12 @@
 import json
 import os
 from input.video_source import VideoSource
+from app_paths import user_data_path
 
 
 class SourceManager:
-    def __init__(self, config_file: str = "config/sources.json"):
-        self.config_file = config_file
+    def __init__(self, config_file: str = None):
+        self.config_file = config_file or user_data_path("config", "sources.json")
         self.sources = {}
         self.active_source_id = None
         self.load_config()

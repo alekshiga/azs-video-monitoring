@@ -18,8 +18,8 @@
     },
     {
       "id": 3,
-      "name": "ANPR test video",
-      "path": "videos/anpr_test.MP4",
+      "name": "Anpr test video",
+      "path": "videos/anpr_test.mp4",
       "enabled": true,
       "type": "ip",
       "anpr": true
@@ -27,7 +27,7 @@
     {
       "id": 4,
       "name": "phone",
-      "path": "rtsp://10.12.208.74:8554/live/phone",
+      "path": "rtsp://*.*.*.*:*/live/phone",
       "enabled": true,
       "type": "ip",
       "anpr": false

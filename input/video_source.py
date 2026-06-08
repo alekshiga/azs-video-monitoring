@@ -4,6 +4,8 @@ import threading
 import time
 from collections import deque
 
+from app_paths import user_data_path
+
 os.environ.setdefault(
     "OPENCV_FFMPEG_CAPTURE_OPTIONS",
     "rtsp_transport;tcp|stimeout;5000000"
@@ -24,7 +26,7 @@ class VideoSource:
         self._running = False
         self.fps = 60
         self.frame_buffer = deque(maxlen=2)
-        self.zones_file = f"config/zones_cam_{source_id}.json"
+        self.zones_file = user_data_path("config", f"zones_cam_{source_id}.json")
         self.is_file = (
             isinstance(source_path, str)
             and source_path.lower().endswith(('.mp4', '.avi', '.mov', '.mkv'))

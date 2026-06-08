@@ -1,5 +1,8 @@
 import sys
 
+from app_paths import ensure_user_data
+ensure_user_data()
+
 from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
 from input.source_manager import SourceManager

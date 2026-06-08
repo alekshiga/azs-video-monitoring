@@ -1,7 +1,10 @@
+import os
 import time
 import cv2
 import torch
 from ultralytics import YOLO
+
+from app_paths import resource_path
 
 
 def _overlap_ratio(rect1, rect2):
@@ -27,8 +30,11 @@ class MotionDetector:
         67: (255, 0, 255),
     }
 
-    def __init__(self, model_name="yolov8m.pt", confidence=0.5, device=None, watched_classes=None):
+    def __init__(self, model_name="yolov8m.pt", confidence=0.4, device=None, watched_classes=None):
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        # Модель — встроенный ресурс только для чтения; разрешаем относительный путь
+        if not os.path.isabs(model_name):
+            model_name = resource_path(model_name)
         self.model = YOLO(model_name)
         self.draw_rectangles = True
         self.watched_classes = watched_classes or {0, 2, 5, 7, 67}

@@ -9,7 +9,9 @@ from email.mime.image import MIMEImage
 from dotenv import load_dotenv
 import cv2
 
-load_dotenv()
+from app_paths import env_file
+
+load_dotenv(env_file())
 
 
 class EmailNotifier:

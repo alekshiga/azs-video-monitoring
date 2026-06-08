@@ -2,6 +2,7 @@ import os
 import time
 from datetime import datetime
 
+from app_paths import user_data_path
 from PyQt6.QtCore import QTimer
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
@@ -398,7 +399,7 @@ class MainWindow(QMainWindow):
         if not ok or not path:
             return
         new_id = self.source_manager.add_ip_source(name, path)
-        ZoneManager(camera_id=new_id).save_to_file(f"config/zones_cam_{new_id}.json")
+        ZoneManager(camera_id=new_id).save_to_file(user_data_path("config", f"zones_cam_{new_id}.json"))
         if self.source_manager.connect_source(new_id):
             self._add_log(f"Добавлена камера: {name}")
         else:

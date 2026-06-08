@@ -9,7 +9,9 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from dotenv import load_dotenv
 
-load_dotenv()
+from app_paths import env_file
+
+load_dotenv(env_file())
 
 
 class TelegramNotifier:

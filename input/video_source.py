@@ -13,12 +13,13 @@ os.environ.setdefault(
 
 
 class VideoSource:
-    def __init__(self, source_id: int, name: str, source_path: str, anpr=False):
+    def __init__(self, source_id: int, name: str, source_path: str, anpr=False, record=True):
         self._thread = None
         self.source_id = source_id
         self.name = name
         self.source_path = source_path
         self.anpr = anpr
+        self.record = record
         self.cap = None
         self.is_connected = False
         self.last_frame = None

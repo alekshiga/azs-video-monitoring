@@ -7,6 +7,7 @@ from PyQt6.QtWidgets import QApplication
 from PyQt6.QtGui import QFont
 from input.source_manager import SourceManager
 from input.video_thread import VideoThread
+from core.archive.archive_manager import ArchiveManager
 from ui.main_window import MainWindow
 
 
@@ -19,7 +20,10 @@ def main():
     source_manager = SourceManager()
     video_thread = VideoThread(source_manager)
 
-    window = MainWindow(video_thread, source_manager)
+    # Архив записи использует ту же БД, что и VideoThread (один писатель, WAL)
+    archive_manager = ArchiveManager(source_manager, video_thread.db)
+
+    window = MainWindow(video_thread, source_manager, archive_manager)
     window.show()
 
     sys.exit(app.exec())

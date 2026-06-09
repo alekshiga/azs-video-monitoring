@@ -3,7 +3,7 @@ import time
 from datetime import datetime
 
 from app_paths import user_data_path
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QHBoxLayout, QVBoxLayout,
     QPushButton, QTextEdit, QLabel, QFileDialog,
@@ -23,13 +23,19 @@ from ui.video_widget import VideoWidget
 from ui.rule_dialog import ZoneRulesDialog
 from ui.alerts_widget import AlertsWidget
 from ui.plates_widget import PlatesWidget
+from ui.archive.archive_tab import ArchiveTab
 
 
 class MainWindow(QMainWindow):
-    def __init__(self, video_thread: VideoThread, source_manager: SourceManager):
+    # архивные логи приходят из фоновых потоков — маршрутизируем в UI через сигнал
+    archive_log = pyqtSignal(str)
+
+    def __init__(self, video_thread: VideoThread, source_manager: SourceManager,
+                 archive_manager=None):
         super().__init__()
         self.video_thread = video_thread
         self.source_manager = source_manager
+        self.archive_manager = archive_manager
         self.email = EmailNotifier()
 
         self.image_stitcher = None
@@ -66,6 +72,12 @@ class MainWindow(QMainWindow):
         self.video_thread.stats_updated.connect(self._on_stats_updated)
         self.video_thread.start()
         self._add_log("Система мониторинга запущена")
+
+        # Запуск видеоархива (логи из фоновых потоков -> сигнал -> журнал)
+        if self.archive_manager is not None:
+            self.archive_log.connect(self._add_log)
+            self.archive_manager.set_log_cb(self.archive_log.emit)
+            self.archive_manager.start()
 
         # Таймер обновления статистики — раз в 5 секунд, на случай если сигнал не дошёл
         self._stats_timer = QTimer(self)
@@ -288,6 +300,15 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.plates_widget, "Гос. номера")
         self.video_thread.plate_recognized.connect(self._on_plate_recognized)
 
+        # Вкладка "Архив" (запись/таймлайн/воспроизведение)
+        self.archive_tab = None
+        if self.archive_manager is not None:
+            self.archive_tab = ArchiveTab(
+                self.archive_manager, self.source_manager, self.video_thread.db
+            )
+            self.tabs.addTab(self.archive_tab, "Архив")
+            self.alerts_widget.alert_activated.connect(self._open_alert_in_archive)
+
     def _connect_signals(self):
         self.single_mode_btn.clicked.connect(self._set_single_mode)
         self.multi_mode_btn.clicked.connect(self._set_multi_mode)
@@ -404,6 +425,10 @@ class MainWindow(QMainWindow):
             self._add_log(f"Добавлена камера: {name}")
         else:
             self._add_log(f"Камера добавлена, но не подключилась: {name}")
+        if self.archive_manager is not None:
+            self.archive_manager.add_camera(new_id)
+            if self.archive_tab is not None:
+                self.archive_tab.refresh_cameras()
         self._refresh_source_list()
 
     def remove_current_camera(self):
@@ -413,10 +438,14 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "Удаление источника", f"Удалить камеру '{self.source_combo.currentText()}'?",
                                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
             self.video_thread.remove_source(sid)
+            if self.archive_manager is not None:
+                self.archive_manager.remove_camera(sid)
             f = self.source_manager.get_zones_file(sid)
             if f and os.path.exists(f):
                 os.remove(f)
             self.source_manager.remove_source(sid)
+            if self.archive_tab is not None:
+                self.archive_tab.refresh_cameras()
             self._refresh_source_list()
             if self.source_combo.count() == 0:
                 self.current_source_id = None
@@ -638,6 +667,13 @@ class MainWindow(QMainWindow):
         self._add_log(f"ТРЕВОГА: {camera_disp} / {display_zone} — {class_name}")
         self.alerts_widget.refresh()
 
+    def _open_alert_in_archive(self, source_id, ts):
+        """Переход из списка тревог к моменту записи в архиве"""
+        if self.archive_tab is None:
+            return
+        self.archive_tab.seek_to(source_id, ts)
+        self.tabs.setCurrentWidget(self.archive_tab)
+
     def _update_alerts_tab_title(self):
         if not hasattr(self, "_alerts_tab_index"):
             return
@@ -732,5 +768,10 @@ class MainWindow(QMainWindow):
                     self.single_video_widget.zone_rules,
                 )
                 zm.save_to_file(self.source_manager.get_zones_file(self.current_source_id))
+        # Сначала плавно гасим архив (финализируем последние сегменты), затем поток
+        if self.archive_tab is not None:
+            self.archive_tab.shutdown()
+        if self.archive_manager is not None:
+            self.archive_manager.stop()
         self.video_thread.stop()
         event.accept()

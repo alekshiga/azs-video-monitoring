@@ -52,6 +52,7 @@ class AlertsWidget(QWidget):
     Новый виджет с исторрией тревог, подгружает тревоги из БД
     """
     alerts_changed = pyqtSignal()
+    alert_activated = pyqtSignal(int, float)   # source_id, ts — переход в архив
 
     COLUMNS = ["Время", "Камера", "Зона", "Объект", "Событие", "Статус"]
 
@@ -81,12 +82,15 @@ class AlertsWidget(QWidget):
         self.ack_btn = QPushButton("Принять")
         self.resolve_btn = QPushButton("Закрыть")
         self.snapshot_btn = QPushButton("Снимок")
+        self.archive_btn = QPushButton("В архив")
         self.refresh_btn = QPushButton("Обновить")
-        for b in (self.ack_btn, self.resolve_btn, self.snapshot_btn, self.refresh_btn):
+        for b in (self.ack_btn, self.resolve_btn, self.snapshot_btn,
+                  self.archive_btn, self.refresh_btn):
             top.addWidget(b)
         self.ack_btn.clicked.connect(self._acknowledge_selected)
         self.resolve_btn.clicked.connect(self._resolve_selected)
         self.snapshot_btn.clicked.connect(self._open_snapshot)
+        self.archive_btn.clicked.connect(self._open_in_archive)
         self.refresh_btn.clicked.connect(self.refresh)
 
         layout.addLayout(top)
@@ -174,6 +178,18 @@ class AlertsWidget(QWidget):
             return
         self.db.set_alert_status(a["id"], "resolved")
         self.refresh()
+
+    def _open_in_archive(self):
+        a = self._selected_alert()
+        if not a:
+            QMessageBox.information(self, "Тревоги", "Выберите тревогу в списке.")
+            return
+        sid = a.get("source_id")
+        ts = a.get("ts")
+        if sid is None or ts is None:
+            QMessageBox.information(self, "Архив", "Для этой тревоги нет времени для перехода.")
+            return
+        self.alert_activated.emit(int(sid), float(ts))
 
     def _open_snapshot(self):
         a = self._selected_alert()

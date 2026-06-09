@@ -27,6 +27,7 @@ class SourceManager:
                         name=src_data.get("name"),
                         source_path=src_data.get("path"),
                         anpr=src_data.get("anpr", False),
+                        record=src_data.get("record", True),
                     )
                     self.sources[src_data.get("id")] = source
 
@@ -119,6 +120,12 @@ class SourceManager:
             src.anpr = bool(enabled)
             self._save_config()
 
+    def set_recording(self, source_id, enabled: bool):
+        src = self.sources.get(source_id)
+        if src:
+            src.record = bool(enabled)
+            self._save_config()
+
     def _save_config(self):
         data = {"sources": []}
         for src in self.sources.values():
@@ -129,6 +136,7 @@ class SourceManager:
                 "enabled": True,
                 "type": "usb" if isinstance(src.source_path, int) else "ip",
                 "anpr": src.anpr,
+                "record": getattr(src, "record", True),
             })
         with open(self.config_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)

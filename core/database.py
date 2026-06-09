@@ -102,10 +102,23 @@ class Database:
                     created_at  TEXT DEFAULT (datetime('now','localtime'))
                 );
 
+                CREATE TABLE IF NOT EXISTS segments (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source_id   INTEGER NOT NULL,
+                    path        TEXT NOT NULL UNIQUE,
+                    start_ts    REAL NOT NULL,    -- эпоха начала сегмента (из имени файла)
+                    end_ts      REAL,            -- эпоха конца (start следующего / по mtime)
+                    duration    REAL,
+                    size_bytes  INTEGER,
+                    created_at  TEXT DEFAULT (datetime('now','localtime'))
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_visits_src ON visits(source_id, zone_index);
                 CREATE INDEX IF NOT EXISTS idx_events_src ON events(source_id, zone_index, event_type);
                 CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status);
+                CREATE INDEX IF NOT EXISTS idx_alerts_src_ts ON alerts(source_id, ts);
                 CREATE INDEX IF NOT EXISTS idx_plates_plate ON plates(plate);
+                CREATE INDEX IF NOT EXISTS idx_segments_src_ts ON segments(source_id, start_ts);
             """)
             self._conn.commit()
 
@@ -355,6 +368,123 @@ class Database:
                 (source_id, limit),
             ).fetchall()
         return [dict(r) for r in rows]
+
+
+    def insert_segment(self, source_id, path, start_ts, end_ts=None,
+                       duration=None, size_bytes=None) -> Optional[int]:
+        """
+        Регистрирует завершенный сегмент записи
+        """
+        try:
+            with self._lock:
+                cur = self._conn.execute(
+                    "INSERT OR IGNORE INTO segments "
+                    "(source_id, path, start_ts, end_ts, duration, size_bytes) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (source_id, path, start_ts, end_ts, duration, size_bytes),
+                )
+                self._conn.commit()
+                return cur.lastrowid if cur.rowcount else None
+        except Exception as e:
+            print(f"[DB] Ошибка записи сегмента: {e}")
+            return None
+
+    def segment_paths(self, source_id) -> set:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT path FROM segments WHERE source_id=?", (source_id,)
+            ).fetchall()
+        return {r["path"] for r in rows}
+
+    def segments_in_range(self, source_id, t0, t1) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM segments WHERE source_id=? "
+                "AND start_ts < ? AND COALESCE(end_ts, start_ts + 86400) > ? "
+                "ORDER BY start_ts",
+                (source_id, t1, t0),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def find_segment_at(self, source_id, t) -> Optional[dict]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM segments WHERE source_id=? AND start_ts <= ? "
+                "AND COALESCE(end_ts, start_ts + 86400) > ? "
+                "ORDER BY start_ts DESC LIMIT 1",
+                (source_id, t, t),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def next_segment_after(self, source_id, t) -> Optional[dict]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM segments WHERE source_id=? AND start_ts > ? "
+                "ORDER BY start_ts ASC LIMIT 1",
+                (source_id, t),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def archive_bounds(self, source_id) -> Optional[tuple]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT MIN(start_ts) AS a, MAX(COALESCE(end_ts, start_ts)) AS b "
+                "FROM segments WHERE source_id=?",
+                (source_id,),
+            ).fetchone()
+        if row and row["a"] is not None:
+            return (row["a"], row["b"])
+        return None
+
+    def oldest_segments(self, limit: int = 100) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM segments ORDER BY start_ts ASC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def segments_older_than(self, cutoff_ts, limit: int = 500) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM segments WHERE start_ts < ? ORDER BY start_ts ASC LIMIT ?",
+                (cutoff_ts, limit),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def total_archive_bytes(self) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COALESCE(SUM(size_bytes), 0) AS s FROM segments"
+            ).fetchone()
+        return int(row["s"] or 0)
+
+    def delete_segment(self, segment_id: int) -> None:
+        try:
+            with self._lock:
+                self._conn.execute("DELETE FROM segments WHERE id=?", (segment_id,))
+                self._conn.commit()
+        except Exception as e:
+            print(f"[DB] Ошибка удаления сегмента: {e}")
+
+    def alerts_in_range(self, source_id, t0, t1) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id, source_id, ts, alert_dt, zone_name, class_name, message, snapshot "
+                "FROM alerts WHERE source_id=? AND ts BETWEEN ? AND ? ORDER BY ts",
+                (source_id, t0, t1),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def nearest_alert(self, source_id, t, direction: int) -> Optional[dict]:
+        if direction >= 0:
+            q = ("SELECT * FROM alerts WHERE source_id=? AND ts > ? "
+                 "ORDER BY ts ASC LIMIT 1")
+        else:
+            q = ("SELECT * FROM alerts WHERE source_id=? AND ts < ? "
+                 "ORDER BY ts DESC LIMIT 1")
+        with self._lock:
+            row = self._conn.execute(q, (source_id, t)).fetchone()
+        return dict(row) if row else None
 
     def close(self):
         try:

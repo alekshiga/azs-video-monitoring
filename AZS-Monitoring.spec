@@ -24,6 +24,15 @@ datas += [('yolov8m.pt', '.')]          # модель детекции
 datas += [('config', 'config')]         # дефолтные конфиги (шаблоны)
 datas += [('tools', 'tools')]           # mediamtx и пр.
 
+# --- ffmpeg для записи видеоархива (-c copy сегментами) ---
+# кладём бинарник в подпапку ffmpeg/; core.archive.ffmpeg_locator берёт его оттуда
+try:
+    import imageio_ffmpeg
+    _ff = imageio_ffmpeg.get_ffmpeg_exe()
+    datas += [(_ff, 'ffmpeg')]
+except Exception as _e:
+    print(f"[spec] ВНИМАНИЕ: ffmpeg не вложен ({_e}); запись архива будет недоступна")
+
 # --- Тяжёлые пакеты собираем целиком (данные, бинарники, подмодули) ---
 for pkg in ('ultralytics', 'easyocr', 'torch', 'torchvision'):
     d, b, h = collect_all(pkg)
@@ -43,6 +52,9 @@ for pkg in ('ultralytics', 'torch', 'torchvision', 'numpy', 'tqdm',
 # --- Доп. подмодули, которые часто теряются при автоанализе ---
 hiddenimports += collect_submodules('scipy')
 hiddenimports += ['app_paths']
+hiddenimports += collect_submodules('core.archive')
+hiddenimports += collect_submodules('ui.archive')
+hiddenimports += ['imageio_ffmpeg']   # fallback-поиск ffmpeg в dev/проде
 
 a = Analysis(
     ['main.py'],

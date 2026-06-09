@@ -1,14 +1,14 @@
 """
-Единая точка разрешения путей для приложения.
+Единая точка разрешения путей для приложения
 
 Логика:
-- В режиме разработки (запуск `python main.py`) и ресурсы, и изменяемые данные
-  лежат в корне проекта — поведение полностью совпадает с прежним.
+- В режиме разработки запуск main.py и ресурсы, и изменяемые данные
+  лежат в корне проекта и поведение полностью совпадает с прежним
 - В собранном виде (PyInstaller, sys.frozen):
     * ресурсы только для чтения (модель, шаблоны конфигов, tools) берутся из
-      папки программы (sys._MEIPASS) — resource_path();
+      папки программы (sys._MEIPASS) resource_path();
     * изменяемые данные (config рабочие, БД, инциденты, .env) пишутся в
-      %LOCALAPPDATA%\\AZS-Monitoring — user_data_path().
+      %LOCALAPPDATA%\\AZS-Monitoring user_data_path().
 """
 
 import os
@@ -23,19 +23,19 @@ def is_frozen() -> bool:
 
 
 def _bundle_root() -> str:
-    """Корень для ресурсов только для чтения."""
+    """Корень для ресурсов только для чтения"""
     if is_frozen():
         return getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     return os.path.dirname(os.path.abspath(__file__))
 
 
 def resource_path(*rel: str) -> str:
-    """Путь к встроенному ресурсу только для чтения (модель, конфиги-шаблоны, tools)."""
+    """Путь к встроенному ресурсу только для чтения"""
     return os.path.join(_bundle_root(), *rel)
 
 
 def user_data_root() -> str:
-    """Корень для изменяемых пользовательских данных."""
+    """Корень для изменяемых пользовательских данных"""
     if is_frozen():
         base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
         return os.path.join(base, APP_NAME)
@@ -44,29 +44,34 @@ def user_data_root() -> str:
 
 
 def user_data_path(*rel: str) -> str:
-    """Путь к изменяемому файлу/папке в пользовательской директории."""
+    """Путь к изменяемому файлу/папке в пользовательской директории"""
     return os.path.join(user_data_root(), *rel)
 
 
 def env_file() -> str:
-    """Путь к .env (читается нотификаторами)."""
+    """Путь к .env (читается нотификаторами)"""
     return user_data_path(".env")
+
+
+def archive_root() -> str:
+    """Корень видеоархива (сегменты записи), изменяемые данные"""
+    return user_data_path("archive")
 
 
 def ensure_user_data() -> None:
     """
     Первый запуск собранного приложения: создаёт изменяемые папки и
-    переносит дефолтные конфиги/шаблон .env в пользовательскую директорию.
-    В режиме разработки ничего не делает.
+    переносит дефолтные конфиги/шаблон .env в пользовательскую директорию
+    В режиме разработки ничего не делает
     """
     if not is_frozen():
         return
 
     root = user_data_root()
-    for sub in ("", "config", "data", "incidents", os.path.join("incidents", "anpr_debug")):
+    for sub in ("", "config", "data", "incidents", os.path.join("incidents", "anpr_debug"), "archive"):
         os.makedirs(os.path.join(root, sub), exist_ok=True)
 
-    # Перенос дефолтных конфигов, если их ещё нет у пользователя
+    # Перенос дефолтных конфигов, если их еще нет у пользователя
     src_cfg = resource_path("config")
     dst_cfg = os.path.join(root, "config")
     if os.path.isdir(src_cfg):
@@ -79,7 +84,7 @@ def ensure_user_data() -> None:
                 except OSError:
                     pass
 
-    # Шаблон .env, если пользователь ещё не создал свой
+    # Шаблон .env, если пользователь еще не создал свой
     env_dst = env_file()
     if not os.path.exists(env_dst):
         try:
